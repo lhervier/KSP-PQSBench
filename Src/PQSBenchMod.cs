@@ -18,7 +18,10 @@ namespace com.github.lhervier.ksp.pqsbench
         /// <summary>What the terrain costs in flight, one line per second of game time.</summary>
         Counters,
 
-        /// <summary>Adds, on a sample of quads, the vertex placements timed against each other.</summary>
+        /// <summary>
+        /// Adds, on a sample of quads, whatever is patching the vertex placement timed against a copy of
+        /// the stock one.
+        /// </summary>
         Calibrate
     }
 
@@ -39,7 +42,9 @@ namespace com.github.lhervier.ksp.pqsbench
 
         // Calibrate: how many times each formula is replayed over a quad, and how often a quad is used
         // for it. One pass over a couple of hundred vertices already lasts far longer than the timer's
-        // resolution; the repeats are there to average, not to make the measurement possible.
+        // resolution; the repeats are there to average, not to make the measurement possible. Each of them
+        // starts on a quad the formula has not seen, so a formula that keeps something per quad pays for it
+        // once per round, the way a real build pays it once per quad.
         private const int CalibrationRounds = 8;
         private const int CalibrateOneQuadIn = 32;
 
@@ -85,10 +90,16 @@ namespace com.github.lhervier.ksp.pqsbench
 
         private static int _topLevelQuadsSeen;
         private static int _calibratedQuads;
-        private static int _refusedQuads;
+        private static int _differingQuads;
         private static long _calibratedVertices;
+
+        // Calibrate: the quad as it was found, what stock makes of it, and the inputs every formula is
+        // replayed on. Allocated once, on the first calibrated quad.
         private static Vector3[] _savedQuadVerts;
         private static Vector3d[] _savedSphereVerts;
+        private static Vector3[] _stockResult;
+        private static Vector3d[] _directions;
+        private static double[] _heights;
 
         // Terrain spheres whose subdivision settings have been logged, so that they are logged once.
         private static readonly HashSet<PQS> _describedSpheres = new HashSet<PQS>();
@@ -339,96 +350,88 @@ namespace com.github.lhervier.ksp.pqsbench
         }
 
         // ==========================================================================
-        // Calibrate: the two formulas, same data, same frame
+        // Calibrate: what is installed against stock, same data, same frame
         // ==========================================================================
 
-        /// <summary>Places one terrain vertex, and says whether it did.</summary>
-        private delegate bool VertexPlacer(PQS sphere, PQ quad, int index, Vector3d vertex);
+        /// <summary>Places one terrain vertex, the way PQS.BuildVertexSurfaceRelative is asked to.</summary>
+        private delegate void VertexPlacer(PQS sphere, PQS.VertexBuildData data);
 
-        /// <summary>Forgets whatever a placement worked out for the quad it was last given.</summary>
-        private delegate void QuadReset();
-
-        // The formulas being compared. Stock and hoisted stock differ by one thing only — when the two
-        // Transforms are read — so what separates them is what reading them costs; hoisted stock and the
-        // fix differ by the arithmetic alone, since both work the quad out once and test for it per vertex.
-        private const int FormulaStock = 0;
-        private const int FormulaHoisted = 1;
-        private const int FormulaFix = 2;
+        // The three things timed, all reached the same way and replayed by the same loop.
+        //   installed - the stock method itself, so it runs through whatever Harmony patch is on it today,
+        //               or straight to stock when there is none. Nothing here knows which;
+        //   stock     - a copy of the stock placement, which stays measurable in a run where the stock
+        //               method is patched. It is the yardstick two runs are compared through;
+        //   harness   - places nothing. What is left is what the replay itself costs, the fields written
+        //               before each call and the indirect call, which the two others also pay.
+        private const int FormulaHarness = 0;
+        private const int FormulaStock = 1;
+        private const int FormulaInstalled = 2;
         private const int FormulaCount = 3;
 
-        private static readonly string[] FormulaNames = { "stock", "stockHoisted", "fixed" };
-
-        // Every formula is called through a delegate of the same type, and preceded by a reset of the same
-        // type. The fix has to be reached that way, since it lives in another assembly and this mod must
-        // run without it; putting the other two behind the same indirection means the calibration compares
-        // formulas rather than ways of reaching one of them.
         private static readonly VertexPlacer[] _place = new VertexPlacer[FormulaCount];
-        private static readonly QuadReset[] _reset = new QuadReset[FormulaCount];
         private static readonly long[] _ticks = new long[FormulaCount];
 
         private static bool _bindingTried;
+        private static bool _calibrationBroken;
 
-        // The type calibrate compares stock against, and the Harmony id it patches under.
-        private const string FixTypeName = "com.github.lhervier.ksp.terrainprecisionfix.TerrainPrecisionFixMod";
-        private const string FixHarmonyId = "com.github.lhervier.ksp.terrainprecisionfix";
+        // Whether a calibration is replaying, so that the quad build it re-enters is not taken for a quad
+        // the game built.
+        private static bool _calibrating;
+
+        // State of PQS the replay has to set for every vertex, because the stock placement reads its
+        // inputs from there rather than from the parameter it is handed.
+        private static AccessTools.FieldRef<PQS, PQ> _buildQuadField;
+        private static AccessTools.FieldRef<PQS, int> _vertexIndexField;
+        private static FieldInfo _vbDataField;
 
         /// <summary>
-        /// Binds the formulas to compare, the fix among them if that mod is installed. All of them are
-        /// bound here, so that none is favoured by how it is reached.
+        /// Binds what the replay needs: the stock vertex placement, and the fields of PQS it reads. A
+        /// failure here gives up on calibrating rather than measuring something else.
         /// </summary>
         private static void BindCalibration()
         {
             _bindingTried = true;
-            _place[FormulaStock] = PlaceVertexStock;
-            _reset[FormulaStock] = ResetNothing;
-            _place[FormulaHoisted] = PlaceVertexStockHoisted;
-            _reset[FormulaHoisted] = ForgetHoisted;
-
-            Type fixType = AccessTools.TypeByName(FixTypeName);
-            if (fixType == null)
-            {
-                Log.Warning("Terrain Precision Fix is not installed: calibrate still compares stock with"
-                    + " hoisted stock, but has nothing to time the fix on.");
-                return;
-            }
-
-            // Both are internal to that mod: it exposes nothing for this, on purpose. A delegate bound once
-            // costs an indirect call, which is exactly what the stock side pays too.
-            MethodInfo place = AccessTools.Method(fixType, "PlaceVertex",
-                new[] { typeof(PQS), typeof(PQ), typeof(int), typeof(Vector3d) });
-            MethodInfo forget = AccessTools.Method(fixType, "ForgetQuadContext", Type.EmptyTypes);
-            if (place == null || forget == null)
-            {
-                Log.Error("Terrain Precision Fix is installed but does not have the methods this"
-                    + " calibration replays. It has probably changed since; only the two stock formulas"
-                    + " are timed.");
-                return;
-            }
-
             try
             {
-                _place[FormulaFix] = (VertexPlacer)Delegate.CreateDelegate(typeof(VertexPlacer), place);
-                _reset[FormulaFix] = (QuadReset)Delegate.CreateDelegate(typeof(QuadReset), forget);
+                _buildQuadField = AccessTools.FieldRefAccess<PQS, PQ>("buildQuad");
+                _vertexIndexField = AccessTools.FieldRefAccess<PQS, int>("vertexIndex");
+                _vbDataField = AccessTools.Field(typeof(PQS), "vbData");
+
+                MethodInfo placement = AccessTools.Method(typeof(PQS), "BuildVertexSurfaceRelative",
+                    new[] { typeof(PQS.VertexBuildData) });
+                if (placement == null)
+                {
+                    throw new MissingMethodException("PQS", "BuildVertexSurfaceRelative");
+                }
+
+                // Bound to the stock method, not to a copy of it. Harmony replaces what that method runs,
+                // so this calls whatever is patching it without having to know what that is — and it pays
+                // the same wrapper the game pays for it.
+                _place[FormulaInstalled] =
+                    (VertexPlacer)Delegate.CreateDelegate(typeof(VertexPlacer), placement);
+                _place[FormulaStock] = PlaceVertexStock;
+                _place[FormulaHarness] = PlaceNothing;
             }
             catch (Exception e)
             {
-                _place[FormulaFix] = null;
-                _reset[FormulaFix] = null;
-                Log.Error($"Could not reach the vertex placement of Terrain Precision Fix: {e}");
-                return;
+                _calibrationBroken = true;
+                Log.Error($"Could not reach the stock vertex placement, nothing will be calibrated: {e}");
             }
-            Log.Info($"Calibrating against Terrain Precision Fix {fixType.Assembly.GetName().Version}");
         }
 
         /// <summary>
         /// Times the vertex placements against each other, replaying each over the vertices of a quad that
-        /// has just been built. Leaves the quad exactly as it found it.
+        /// has just been built. Leaves the quad, and everything the replay had to set, exactly as found.
         /// </summary>
         private static void Calibrate(PQS sphere, PQ quad)
         {
             if (!_bindingTried)
             {
                 BindCalibration();
+            }
+            if (_calibrationBroken)
+            {
+                return;
             }
 
             int count = PQS.cacheVertCount;
@@ -437,144 +440,191 @@ namespace com.github.lhervier.ksp.pqsbench
             {
                 return;
             }
-
-            // Both formulas write where the real build wrote, so what the terrain ends up looking like
-            // would otherwise depend on which one happened to run last.
-            if (_savedQuadVerts == null || _savedQuadVerts.Length < count)
+            // Read once per calibrated quad, well outside the clock: the build fills this same instance
+            // for every vertex, and a placement reads its inputs from it.
+            PQS.VertexBuildData data = _vbDataField.GetValue(null) as PQS.VertexBuildData;
+            if (data == null)
             {
-                _savedQuadVerts = new Vector3[count];
-                _savedSphereVerts = new Vector3d[count];
+                return;
             }
+            EnsureCalibrationBuffers(count);
+
+            // Everything the replay is about to write over. What the terrain ends up looking like, and the
+            // state the rest of the build reads next, must not depend on which formula ran last.
             Array.Copy(quad.verts, _savedQuadVerts, count);
             Array.Copy(PQS.verts, _savedSphereVerts, count);
+            PQ savedBuildQuad = _buildQuadField(sphere);
+            int savedVertexIndex = _vertexIndexField(sphere);
+            PQ savedDataQuad = data.buildQuad;
+            Vector3d savedDirection = data.directionFromCenter;
+            double savedHeight = data.vertHeight;
+            int savedVertIndex = data.vertIndex;
+            bool savedIsBuilt = quad.isBuilt;
 
-            // One round of each before the clock starts: the first pass over an array that is not in cache
-            // would otherwise be charged to whichever formula runs first. The fix's round also says whether
-            // it applies to this quad at all — installed but inactive, it would place nothing, and the
-            // others would be timed against an empty loop.
-            for (int formula = 0; formula < FormulaCount; formula++)
+            // What every formula is replayed on, worked out once and outside the clock. PQS.verts holds
+            // each vertex as the build left it, which is the direction from the centre of the body times
+            // the height along it: the two values a placement is handed.
+            for (int index = 0; index < count; index++)
             {
-                if (_place[formula] == null)
+                Vector3d vertex = _savedSphereVerts[index];
+                double height = vertex.magnitude;
+                _heights[index] = height;
+                _directions[index] = height > 0.0 ? vertex / height : Vector3d.zero;
+            }
+
+            // The state a real build is in when it hands a vertex over. BuildQuad clears buildQuad on its
+            // way out, so it has to be put back for the replay.
+            _buildQuadField(sphere) = quad;
+            data.buildQuad = quad;
+
+            _calibrating = true;
+            try
+            {
+                if (!InvalidateQuadCaches(sphere, quad))
                 {
-                    continue;
-                }
-                if (Run(formula, sphere, quad, count, 1) < count && formula == FormulaFix)
-                {
-                    Restore(quad, count);
-                    _refusedQuads++;
+                    _calibrationBroken = true;
+                    Log.Error("Re-entering PQS.BuildQuad rebuilt the quad instead of turning back, so a"
+                        + " formula cannot be handed a quad it has not seen: nothing will be calibrated.");
                     return;
                 }
-            }
 
-            // The order rotates from one calibrated quad to the next, so that each formula runs as often
-            // first as last and whatever is left of that effect does not always land on the same one.
-            for (int step = 0; step < FormulaCount; step++)
-            {
-                int formula = (_calibratedQuads + step) % FormulaCount;
-                if (_place[formula] == null)
+                // One untimed round of stock. It warms the two arrays, which the rest of the build has
+                // pushed out of cache, so that whichever formula runs first is not charged for it — and it
+                // leaves what stock makes of this quad, which the installed placement is compared against
+                // below.
+                Run(FormulaStock, sphere, data, count);
+                Array.Copy(quad.verts, _stockResult, count);
+
+                // The order rotates from one calibrated quad to the next, so that each formula runs as
+                // often first as last and whatever is left of that effect does not always land on the same
+                // one.
+                for (int step = 0; step < FormulaCount; step++)
                 {
-                    continue;
-                }
-                _ticks[formula] += Time(formula, sphere, quad, count);
-            }
-
-            Restore(quad, count);
-            _calibratedQuads++;
-            _calibratedVertices += (long)count * CalibrationRounds;
-        }
-
-        private static void Restore(PQ quad, int count)
-        {
-            Array.Copy(_savedQuadVerts, quad.verts, count);
-            Array.Copy(_savedSphereVerts, PQS.verts, count);
-        }
-
-        private static long Time(int formula, PQS sphere, PQ quad, int count)
-        {
-            long start = Stopwatch.GetTimestamp();
-            Run(formula, sphere, quad, count, CalibrationRounds);
-            return Stopwatch.GetTimestamp() - start;
-        }
-
-        /// <summary>
-        /// Replays one placement over every vertex of a quad, as many times as asked, and returns how many
-        /// vertices its last round placed.
-        /// </summary>
-        private static int Run(int formula, PQS sphere, PQ quad, int count, int rounds)
-        {
-            VertexPlacer place = _place[formula];
-            QuadReset reset = _reset[formula];
-            int placed = 0;
-            for (int round = 0; round < rounds; round++)
-            {
-                // As if the quad had just been handed over: whatever a placement works out once per quad is
-                // worked out again here, and charged to the vertices of this round like it is in a real
-                // build.
-                reset();
-                placed = 0;
-                for (int index = 0; index < count; index++)
-                {
-                    if (place(sphere, quad, index, PQS.verts[index]))
+                    int formula = (_calibratedQuads + step) % FormulaCount;
+                    _ticks[formula] += Time(formula, sphere, data, quad, count);
+                    if (formula == FormulaInstalled && DiffersFromStock(quad, count))
                     {
-                        placed++;
+                        _differingQuads++;
                     }
                 }
+                _calibratedQuads++;
+                _calibratedVertices += (long)count * CalibrationRounds;
             }
-            return placed;
+            finally
+            {
+                _calibrating = false;
+                Array.Copy(_savedQuadVerts, quad.verts, count);
+                Array.Copy(_savedSphereVerts, PQS.verts, count);
+                _buildQuadField(sphere) = savedBuildQuad;
+                _vertexIndexField(sphere) = savedVertexIndex;
+                data.buildQuad = savedDataQuad;
+                data.directionFromCenter = savedDirection;
+                data.vertHeight = savedHeight;
+                data.vertIndex = savedVertIndex;
+                quad.isBuilt = savedIsBuilt;
+            }
         }
 
-        /// <summary>The stock placement, as PQS.BuildVertexSurfaceRelative does it.</summary>
-        private static bool PlaceVertexStock(PQS sphere, PQ quad, int index, Vector3d vertex)
+        private static void EnsureCalibrationBuffers(int count)
         {
-            // Both Transforms are read per vertex, because stock reads them per vertex: the method this
-            // replays is called once for each one, and reads base.transform and buildQuad.transform every
-            // time. Hoisting them out of the loop measures something the game never does — which is what
-            // the formula below is for.
-            //
-            // Stock keeps the vertex relative to the centre of the body alongside the quad-local one: the
-            // normals are computed from it. It holds the intermediate in a field of PQS rather than in a
-            // local, which is the one liberty taken here, and it is taken on the stock side.
-            Vector3 planetRelative = sphere.transform.TransformPoint((Vector3)vertex);
-            PQS.verts[index] = vertex;
-            quad.verts[index] = quad.transform.InverseTransformPoint(planetRelative);
-            return true;
+            if (_savedQuadVerts != null && _savedQuadVerts.Length >= count)
+            {
+                return;
+            }
+            _savedQuadVerts = new Vector3[count];
+            _savedSphereVerts = new Vector3d[count];
+            _stockResult = new Vector3[count];
+            _directions = new Vector3d[count];
+            _heights = new double[count];
         }
-
-        /// <summary>Stock works nothing out per quad, so its reset has nothing to do.</summary>
-        private static void ResetNothing()
-        {
-        }
-
-        // What the hoisted formula keeps from one vertex to the next, and the quad it holds for.
-        private static PQ _hoistedFor;
-        private static Transform _hoistedSphereTransform;
-        private static Transform _hoistedQuadTransform;
 
         /// <summary>
-        /// The stock arithmetic, with the two Transforms read once per quad instead of once per vertex.
-        /// Not a placement the game contains: it stands between the two others, and what separates it from
-        /// stock is what reading a Transform costs.
+        /// Tells whatever patches the terrain that a build of this quad is starting, so that anything it
+        /// keeps per quad is worked out again on the next vertex. Returns whether the call came straight
+        /// back, which it must.
         /// </summary>
-        private static bool PlaceVertexStockHoisted(PQS sphere, PQ quad, int index, Vector3d vertex)
+        private static bool InvalidateQuadCaches(PQS sphere, PQ quad)
         {
-            // Kept per quad the same way the fix keeps its own frame, and tested for on every vertex the
-            // same way: the two differ by their arithmetic, not by how they are organised.
-            if (!ReferenceEquals(quad, _hoistedFor))
-            {
-                _hoistedFor = quad;
-                _hoistedSphereTransform = sphere.transform;
-                _hoistedQuadTransform = quad.transform;
-            }
-            Vector3 planetRelative = _hoistedSphereTransform.TransformPoint((Vector3)vertex);
-            PQS.verts[index] = vertex;
-            quad.verts[index] = _hoistedQuadTransform.InverseTransformPoint(planetRelative);
-            return true;
+            // PQS.BuildQuad turns an already built quad away on its first line, before touching anything —
+            // but the Harmony prefixes have run by then, and a quad build starting is the only signal a
+            // mod's per-quad state can be expected to listen to. isBuilt is true from the caller's point of
+            // view here: BuildQuad has just returned true and PQ.Build is about to set it.
+            quad.isBuilt = true;
+            return !sphere.BuildQuad(quad);
         }
 
-        /// <summary>Forgets the Transforms kept for a quad, so that the next vertex reads them again.</summary>
-        private static void ForgetHoisted()
+        private static long Time(int formula, PQS sphere, PQS.VertexBuildData data, PQ quad, int count)
         {
-            _hoistedFor = null;
+            long total = 0L;
+            for (int round = 0; round < CalibrationRounds; round++)
+            {
+                // Outside the clock, so that a round measures a placement facing a quad it has not seen —
+                // paying for it once over a couple of hundred vertices, as a real build does — without the
+                // signal that caused it being charged to anyone.
+                InvalidateQuadCaches(sphere, quad);
+                long start = Stopwatch.GetTimestamp();
+                Run(formula, sphere, data, count);
+                total += Stopwatch.GetTimestamp() - start;
+            }
+            return total;
+        }
+
+        /// <summary>Replays one placement over every vertex of a quad, once.</summary>
+        private static void Run(int formula, PQS sphere, PQS.VertexBuildData data, int count)
+        {
+            VertexPlacer place = _place[formula];
+            for (int index = 0; index < count; index++)
+            {
+                // The state stock's own loop leaves for each vertex, since a placement reads its inputs
+                // from there and not from the parameter it is given. Written the same way for every
+                // formula, and what it costs is what the harness formula measures.
+                _vertexIndexField(sphere) = index;
+                data.vertIndex = index;
+                data.directionFromCenter = _directions[index];
+                data.vertHeight = _heights[index];
+                place(sphere, data);
+            }
+        }
+
+        /// <summary>The stock placement, line for line as PQS.BuildVertexSurfaceRelative does it.</summary>
+        private static void PlaceVertexStock(PQS sphere, PQS.VertexBuildData data)
+        {
+            // Both Transforms are read per vertex, because stock reads them per vertex: the method this
+            // copies is called once for each one, and reads base.transform and buildQuad.transform every
+            // time.
+            //
+            // Stock takes its inputs from private fields of PQS, which a copy cannot reach as cheaply. They
+            // are read here off the VertexBuildData the build fills for every vertex anyway: public fields
+            // of a class, holding the same values, at the same kind of cost.
+            PQ quad = data.buildQuad;
+            int index = data.vertIndex;
+            Vector3d vertRel = data.directionFromCenter * data.vertHeight;
+            Vector3 planetRel = sphere.transform.TransformPoint((Vector3)vertRel);
+            PQS.verts[index] = vertRel;
+            quad.verts[index] = quad.transform.InverseTransformPoint(planetRel);
+        }
+
+        /// <summary>Places nothing: what it measures is what the replay itself costs.</summary>
+        private static void PlaceNothing(PQS sphere, PQS.VertexBuildData data)
+        {
+        }
+
+        /// <summary>
+        /// Whether the installed placement put this quad's vertices anywhere other than stock does. Exact,
+        /// component by component: what is looked for is any difference at all.
+        /// </summary>
+        private static bool DiffersFromStock(PQ quad, int count)
+        {
+            for (int index = 0; index < count; index++)
+            {
+                Vector3 installed = quad.verts[index];
+                Vector3 stock = _stockResult[index];
+                if (installed.x != stock.x || installed.y != stock.y || installed.z != stock.z)
+                {
+                    return true;
+                }
+            }
+            return false;
         }
 
         // ==========================================================================
@@ -586,7 +636,7 @@ namespace com.github.lhervier.ksp.pqsbench
         {
             Log.Info($"BENCH begin;mode={_mode};samples={_sampleCount}"
                 + $";verticesPerQuad={PQS.cacheVertCount};warpedSeconds={_warpedSeconds}"
-                + $";{DescribeFix()}");
+                + $";{DescribeInstalled()}");
             Log.Info("BENCH;sample;ut;utSpan;realSeconds;frames;fps;altitude;speed;quads;topLevelQuads"
                 + ";vertices;buildMs;topLevelBuildMs;updateMs;subdivisionAvg;subdivisionMax;speedLevelCap;maxLevel");
             for (int i = 0; i < _sampleCount; i++)
@@ -613,59 +663,62 @@ namespace com.github.lhervier.ksp.pqsbench
 
             if (_calibratedVertices > 0)
             {
-                string line = $"BENCH calibration;quads={_calibratedQuads};refusedQuads={_refusedQuads}"
-                    + $";verticesPerFormula={_calibratedVertices}";
-                for (int formula = 0; formula < FormulaCount; formula++)
-                {
-                    double ns = _ticks[formula] * TicksToNanoseconds / _calibratedVertices;
-                    line += $";{FormulaNames[formula]}NsPerVertex="
-                        + (_place[formula] == null ? "n/a" : F(ns, 1));
-                }
-
-                // What reading the two Transforms costs, and what the arithmetic costs, each being the
-                // distance between two formulas that differ by that alone.
+                double harnessNs = _ticks[FormulaHarness] * TicksToNanoseconds / _calibratedVertices;
                 double stockNs = _ticks[FormulaStock] * TicksToNanoseconds / _calibratedVertices;
-                double hoistedNs = _ticks[FormulaHoisted] * TicksToNanoseconds / _calibratedVertices;
-                line += $";transformReadsNsPerVertex={F(stockNs - hoistedNs, 1)}";
-                if (_place[FormulaFix] != null)
+                double installedNs = _ticks[FormulaInstalled] * TicksToNanoseconds / _calibratedVertices;
+
+                // The two figures to read are the net ones: what a placement costs on its own, the replay's
+                // own cost taken off both. The raw ones are there so that the subtraction can be checked.
+                Log.Info($"BENCH calibration;quads={_calibratedQuads};differingQuads={_differingQuads}"
+                    + $";roundsPerQuad={CalibrationRounds};verticesPerFormula={_calibratedVertices}"
+                    + $";stockNsPerVertex={F(stockNs - harnessNs, 1)}"
+                    + $";installedNsPerVertex={F(installedNs - harnessNs, 1)}"
+                    + $";differenceNsPerVertex={F(installedNs - stockNs, 1)}"
+                    + $";harnessNsPerVertex={F(harnessNs, 1)}"
+                    + $";stockRawNsPerVertex={F(stockNs, 1)}"
+                    + $";installedRawNsPerVertex={F(installedNs, 1)}");
+                if (_differingQuads == 0)
                 {
-                    double fixNs = _ticks[FormulaFix] * TicksToNanoseconds / _calibratedVertices;
-                    line += $";arithmeticNsPerVertex={F(fixNs - hoistedNs, 1)}"
-                        + $";differenceNsPerVertex={F(fixNs - stockNs, 1)}";
+                    Log.Info("BENCH calibration;the installed placement put every vertex exactly where"
+                        + " stock puts it. Either nothing is patching it, or what is changes the cost"
+                        + " without changing the terrain.");
                 }
-                Log.Info(line);
             }
             else if (_mode == BenchMode.Calibrate)
             {
-                Log.Warning($"BENCH calibration;quads=0;refusedQuads={_refusedQuads};nothing was"
-                    + " calibrated: either no quad of the highest level was built, or the fix declined"
-                    + " every one of them");
+                Log.Warning("BENCH calibration;quads=0;nothing was calibrated: "
+                    + (_calibrationBroken
+                        ? "the replay could not be set up, see the error above"
+                        : "no quad of the highest subdivision level was built"));
             }
             Log.Info("BENCH end");
         }
 
         /// <summary>
-        /// Whether Terrain Precision Fix is installed, and whether it is actually patching the vertex
-        /// placement. Read here rather than at startup: nothing says which of the two mods loads first.
+        /// Which mods are patching the two stock methods this measurement stands on, so that a log says
+        /// for itself which run it is. Read at dump time rather than at startup: nothing says in which
+        /// order mods install their patches.
         /// </summary>
-        private static string DescribeFix()
+        private static string DescribeInstalled()
         {
-            Type fixType = AccessTools.TypeByName(FixTypeName);
-            if (fixType == null)
-            {
-                return "fix=absent";
-            }
+            return "vertexPlacementPatchedBy="
+                + Owners(AccessTools.Method(typeof(PQS), "BuildVertexSurfaceRelative"))
+                + ";quadBuildPatchedBy=" + Owners(AccessTools.Method(typeof(PQS), "BuildQuad"));
+        }
 
-            // Installed is not the same as working: the fix gives up on its own if it cannot bind what it
-            // patches, and then leaves the terrain exactly as stock builds it.
-            bool patching = false;
-            MethodBase target = AccessTools.Method(typeof(PQS), "BuildVertexSurfaceRelative");
-            if (target != null)
+        /// <summary>The Harmony ids patching a method, in no particular order.</summary>
+        private static string Owners(MethodBase method)
+        {
+            if (method == null)
             {
-                Patches patches = Harmony.GetPatchInfo(target);
-                patching = patches != null && patches.Owners != null && patches.Owners.Contains(FixHarmonyId);
+                return "unknown";
             }
-            return $"fix={fixType.Assembly.GetName().Version};fixPatching={patching}";
+            Patches patches = Harmony.GetPatchInfo(method);
+            if (patches == null || patches.Owners == null || patches.Owners.Count == 0)
+            {
+                return "none";
+            }
+            return string.Join("+", new List<string>(patches.Owners).ToArray());
         }
 
         /// <summary>Throws away everything recorded, to start another run without restarting KSP.</summary>
@@ -678,7 +731,7 @@ namespace com.github.lhervier.ksp.pqsbench
             Array.Clear(_ticks, 0, _ticks.Length);
             _topLevelQuadsSeen = 0;
             _calibratedQuads = 0;
-            _refusedQuads = 0;
+            _differingQuads = 0;
             _calibratedVertices = 0L;
             _describedSpheres.Clear();
             Log.Info("BENCH reset");
@@ -720,8 +773,9 @@ namespace com.github.lhervier.ksp.pqsbench
 
             private static void Postfix(PQS __instance, PQ quad, bool __result, long __state)
             {
-                // A false result is a call that returned without building anything.
-                if (!__result || quad == null)
+                // A false result is a call that returned without building anything, which is what the
+                // calibration's own re-entry gets. _calibrating covers the rest.
+                if (!__result || quad == null || _calibrating)
                 {
                     return;
                 }

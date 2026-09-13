@@ -5,9 +5,9 @@ long each one takes, and how much of a frame that is. It corrects nothing and ch
 game — it only counts.
 
 It was written to check what
-[Terrain Precision Fix](https://github.com/lhervier/KSP-TerrainPrecisionFix) costs, and it carries one
-measurement specific to that mod (`calibrate`, below). Everything else is about stock `PQS` and works
-with any mod, or none.
+[Terrain Precision Fix](https://github.com/lhervier/KSP-TerrainPrecisionFix) costs, but it knows nothing
+about that mod, or any other. Everything it measures is stock `PQS`, and `calibrate` times whatever is
+patching the vertex placement without needing to know what that is.
 
 ## Install
 
@@ -28,7 +28,7 @@ the file, start KSP again.
 |---|---|
 | `off` (default) | nothing, and nothing is patched |
 | `counters` | what the terrain costs in flight, one line per second of game time |
-| `calibrate` | adds the two vertex placements timed against each other — see below |
+| `calibrate` | adds what one terrain vertex costs, installed against stock — see below |
 
 `logLevel` takes `Error`, `Warning`, `Info` (default), `Debug` or `Trace`. **Measure at `Info`**: the
 measurement itself writes at `Info`, and anything above it makes other mods write to `KSP.log` on the
@@ -75,37 +75,52 @@ craft moves between two samples of real time: the faster it flies — or the slo
 lower it falls. A run where `speedLevelCap` sits below `maxLevel` never built the quads you were trying
 to measure.
 
-## `calibrate`: three formulas on the same data
+## `calibrate`: what is installed, against stock, on the same data
 
-`counters` measures the game. `calibrate` answers a narrower question: of several ways of placing a
-terrain vertex, which is faster on this machine, and where does the difference come from?
+`counters` measures the game as it runs. `calibrate` answers a narrower question: what does **one
+terrain vertex** cost, and how much of that does the mod under test change?
 
-On one quad in thirty-two, in the frame that just built it, each placement is replayed over its
-vertices, eight rounds each, and the quad is put back exactly as it was found. The order rotates from
-quad to quad, so each formula runs as often first as last. The three are:
+A vertex costs around a hundred nanoseconds, and a `Stopwatch` tick is a hundred nanoseconds, so the
+placement has to be replayed. On one quad in thirty-two, in the frame that just built it, each of three
+things is run over the quad's vertices, eight rounds each, and the quad is then put back exactly as it
+was found. The order rotates from quad to quad, so each runs as often first as last.
 
 | | |
 |---|---|
-| `stock` | as `PQS.BuildVertexSurfaceRelative` does it: `Transform.TransformPoint` then `Transform.InverseTransformPoint`, **and a read of `Component.transform` before each** — that method is called once per vertex, and reads `base.transform` and `buildQuad.transform` every time |
-| `stockHoisted` | the same arithmetic, with the two `Transform`s read once per quad instead. Not a placement the game contains: it exists to separate the cost of the arithmetic from the cost of asking Unity for a `Transform` |
-| `fixed` | the one Terrain Precision Fix puts in their place, if that mod is installed — the real method, not a copy of its arithmetic, so what a vertex costs includes everything that mod works out along the way |
+| `installed` | `PQS.BuildVertexSurfaceRelative` itself, so it runs through whatever Harmony patch is on it — or straight to stock when there is none. **The bench does not know, and does not need to know, which mod that is** |
+| `stock` | a copy of the stock placement, four lines long. It stays measurable in a run where the stock method is patched, and it is the yardstick two runs are compared through |
+| `harness` | places nothing. What it measures is what the replay itself costs — the fields written before each call, and the indirect call — which the two others also pay, and which is subtracted from both |
 
-Two differences, each between formulas that differ by one thing only, and both reported in the dump:
+The dump gives `stockNsPerVertex` and `installedNsPerVertex` **net of the harness**, their difference,
+and the three raw figures so that the subtraction can be checked.
 
-- `stock` − `stockHoisted` = **`transformReadsNsPerVertex`**, what reading the two `Transform`s costs;
-- `fixed` − `stockHoisted` = **`arithmeticNsPerVertex`**, what the double-precision arithmetic costs
-  against stock's, both being organised the same way: worked out once per quad, tested for per vertex.
+### Two things the replay has to reproduce
 
-The fix's method is `private` to the other mod, which exposes nothing for this on purpose. It is reached
-through a delegate bound once, which costs an indirect call per vertex — **so the two stock formulas are
-put behind delegates of the same type**, bound the same way, and all three are preceded by a reset of
-the same type (plain stock has nothing to reset). The calibration then compares formulas rather than
-ways of reaching one of them.
+**Where a placement reads its inputs.** `PQS.BuildVertexSurfaceRelative` ignores the `VertexBuildData`
+it is handed and reads `vbData`, `vertexIndex` and `buildQuad`, three fields of `PQS`. The replay sets
+them for every vertex, identically for every formula — which is the cost `harness` is there to measure.
 
-Without Terrain Precision Fix installed, `fixed` is reported as `n/a` and the two stock formulas are
-still timed — what a `Transform` read costs has nothing to do with that mod. If the fix is installed but
-declines a quad, that quad is skipped and counted in `refusedQuads` rather than timed against an empty
-loop.
+**A quad it has not seen.** A placement that works something out once per quad, and reuses it for that
+quad's couple of hundred vertices, only pays for it once. Replay eight rounds without saying so and
+seven of them ride free, which flatters the cache by a factor of eight. So before each timed round, and
+outside the clock, the bench re-enters `PQS.BuildQuad` on the quad: stock turns an already built quad
+away on the method's first line, before touching anything — but the Harmony prefixes have run by then.
+
+That is the one thing a mod has to do to be measured honestly here:
+
+> **A mod that keeps state per terrain quad must invalidate it on a `PQS.BuildQuad` prefix.**
+
+It is not a rule invented for this: a quad can be rebuilt after having been moved, so anything worked
+out from it is stale at that point anyway.
+
+### What the dump says about the run
+
+The `BENCH begin` line names the Harmony ids patching `PQS.BuildVertexSurfaceRelative` and
+`PQS.BuildQuad`, so a log says for itself which run it is.
+
+`differingQuads` counts the calibrated quads where the installed placement put a vertex somewhere other
+than stock does, compared exactly. Zero means either that nothing is patching the placement, or that
+what is changes what it costs without changing the terrain.
 
 ## Measuring a terrain mod
 
@@ -113,6 +128,11 @@ The flight is on rails, so loading the same save twice covers the same ground tw
 being measured installed, against a run with its folder taken out of `GameData`, is the whole method —
 and taking it out is the only honest reference: a mod left in place with its correction switched off
 still pays for its own patches on the path being timed.
+
+One run measures one configuration, since a Harmony patch is installed for the whole session. What makes
+the runs comparable is that each of them carries its own `stock` yardstick, measured in the same frames
+as the thing under test: read `installedNsPerVertex` against the `stockNsPerVertex` of **its own run**,
+not against another machine's.
 
 ### The craft
 
@@ -147,8 +167,8 @@ minutes at ×1, then **Alt+F8**. Use the same two marks in every run: the number
 but two runs are only comparable if they cover the same stretch of orbit.
 
 A run is worth keeping when `topLevelQuads` is above zero and `speedLevelCap` sits at `maxLevel`. The
-`BENCH begin` line records whether Terrain Precision Fix was there and whether it was actually patching,
-so a log says for itself which run it is.
+`BENCH begin` line records which Harmony ids were patching the terrain, so a log says for itself which
+run it is.
 
 ## Build
 
