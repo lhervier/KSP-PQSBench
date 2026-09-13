@@ -1,0 +1,38 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net472</TargetFramework>
+    <AssemblyName>PQSBenchMod</AssemblyName>
+    <RootNamespace>com.github.lhervier.ksp.pqsbench</RootNamespace>
+    <Version>0.1.0</Version>
+    <Description>Measures what building the KSP terrain costs, in flight</Description>
+    <!-- Straight into the folder that gets copied to the GameData of KSP. -->
+    <OutputPath>GameData\PQSBenchMod</OutputPath>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+    <DebugType>none</DebugType>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies.net472" Version="1.0.3">
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
+  </ItemGroup>
+  <ItemGroup>
+    <!-- Read from the KSP install given by KSPDIR, never copied next to the DLL. -->
+    <Reference Include="Assembly-CSharp">
+      <HintPath>$(KSPDIR)\KSP_x64_Data\Managed\Assembly-CSharp.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine">
+      <HintPath>$(KSPDIR)\KSP_x64_Data\Managed\UnityEngine.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.CoreModule">
+      <HintPath>$(KSPDIR)\KSP_x64_Data\Managed\UnityEngine.CoreModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <!-- Not part of KSP: HarmonyKSP, the usual GameData\000_Harmony. -->
+    <Reference Include="0Harmony">
+      <HintPath>$(KSPDIR)\GameData\000_Harmony\0Harmony.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+  </ItemGroup>
+</Project>
