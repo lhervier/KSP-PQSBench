@@ -63,11 +63,11 @@ Plus, once per terrain sphere, a `BENCH sphere` line with what decides how far i
 `BENCH colliders` line per `PQSMod_QuadMeshColliders` with its `maxLevelOffset`. Read on Kerbin and the
 Mun, KSP 1.12.5:
 
-| sphere | minLevel | maxLevel | highest level appears under | lowest level with a collider |
-|---|---|---|---|---|
-| Kerbin | 2 | 10 | 9 375 m | 10 |
-| Mun | 2 | 9 | 6 250 m | 9 |
-| KerbinOcean | 2 | 7 | 75 000 m | none |
+| sphere | minLevel | maxLevel | highest level appears under | lowest level with a collider | max angle per sample |
+|---|---|---|---|---|---|
+| Kerbin | 2 | 10 | 9 375 m | 10 | 4.60e-5 rad |
+| Mun | 2 | 9 | 6 250 m | 9 | 9.20e-5 rad |
+| KerbinOcean | 2 | 7 | 75 000 m | none | 3.68e-4 rad |
 
 **`speedLevelCap` is the column to watch.** `PQ.UpdateSubdivision` only splits a quad while
 `subdivision < sphereRoot.maxLevelAtCurrentTgtSpeed`, and that ceiling is worked out from how far the
@@ -75,29 +75,37 @@ craft moves between two samples of real time: the faster it flies — or the slo
 lower it falls. A run where `speedLevelCap` sits below `maxLevel` never built the quads you were trying
 to measure.
 
-## `calibrate`: two formulas on the same data
+## `calibrate`: three formulas on the same data
 
-`counters` measures the game. `calibrate` answers a narrower question: of two ways of placing a terrain
-vertex, which is faster on this machine?
+`counters` measures the game. `calibrate` answers a narrower question: of several ways of placing a
+terrain vertex, which is faster on this machine, and where does the difference come from?
 
-On one quad in thirty-two, in the frame that just built it, both placements are replayed over its
-vertices, eight rounds each, and the quad is put back exactly as it was found. Which one runs first
-alternates from quad to quad. The two are:
+On one quad in thirty-two, in the frame that just built it, each placement is replayed over its
+vertices, eight rounds each, and the quad is put back exactly as it was found. The order rotates from
+quad to quad, so each formula runs as often first as last. The three are:
 
-- **stock**, as `PQS.BuildVertexSurfaceRelative` does it: `Transform.TransformPoint` then
-  `Transform.InverseTransformPoint`, two calls into the native engine per vertex;
-- **the one Terrain Precision Fix puts in its place**, if that mod is installed — the real method, not a
-  copy of its arithmetic, so what a vertex costs includes everything that mod works out along the way.
+| | |
+|---|---|
+| `stock` | as `PQS.BuildVertexSurfaceRelative` does it: `Transform.TransformPoint` then `Transform.InverseTransformPoint`, **and a read of `Component.transform` before each** — that method is called once per vertex, and reads `base.transform` and `buildQuad.transform` every time |
+| `stockHoisted` | the same arithmetic, with the two `Transform`s read once per quad instead. Not a placement the game contains: it exists to separate the cost of the arithmetic from the cost of asking Unity for a `Transform` |
+| `fixed` | the one Terrain Precision Fix puts in their place, if that mod is installed — the real method, not a copy of its arithmetic, so what a vertex costs includes everything that mod works out along the way |
 
-That second method is `private` to the other mod, which exposes nothing for this on purpose. It is
-reached through a delegate bound once, which costs an indirect call per vertex — **so the stock side is
-put behind a delegate of the same type**, bound the same way, and both are preceded by a reset of the
-same type (stock has nothing to reset). The calibration then compares the two formulas rather than the
-cost of reaching one of them.
+Two differences, each between formulas that differ by one thing only, and both reported in the dump:
 
-Without Terrain Precision Fix installed there is no second formula, and `calibrate` says so in the log
-and records nothing; the counters are unaffected. If the fix is installed but declines a quad, that quad
-is skipped and counted in `refusedQuads` rather than timed against an empty loop.
+- `stock` − `stockHoisted` = **`transformReadsNsPerVertex`**, what reading the two `Transform`s costs;
+- `fixed` − `stockHoisted` = **`arithmeticNsPerVertex`**, what the double-precision arithmetic costs
+  against stock's, both being organised the same way: worked out once per quad, tested for per vertex.
+
+The fix's method is `private` to the other mod, which exposes nothing for this on purpose. It is reached
+through a delegate bound once, which costs an indirect call per vertex — **so the two stock formulas are
+put behind delegates of the same type**, bound the same way, and all three are preceded by a reset of
+the same type (plain stock has nothing to reset). The calibration then compares formulas rather than
+ways of reaching one of them.
+
+Without Terrain Precision Fix installed, `fixed` is reported as `n/a` and the two stock formulas are
+still timed — what a `Transform` read costs has nothing to do with that mod. If the fix is installed but
+declines a quad, that quad is skipped and counted in `refusedQuads` rather than timed against an empty
+loop.
 
 ## Measuring a terrain mod
 

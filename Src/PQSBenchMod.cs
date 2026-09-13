@@ -18,7 +18,7 @@ namespace com.github.lhervier.ksp.pqsbench
         /// <summary>What the terrain costs in flight, one line per second of game time.</summary>
         Counters,
 
-        /// <summary>Adds, on a sample of quads, the two vertex placements timed against each other.</summary>
+        /// <summary>Adds, on a sample of quads, the vertex placements timed against each other.</summary>
         Calibrate
     }
 
@@ -83,8 +83,6 @@ namespace com.github.lhervier.ksp.pqsbench
         private static long _currentStartTicks;
         private static int _warpedSeconds;
 
-        private static long _stockTicks;
-        private static long _fixedTicks;
         private static int _topLevelQuadsSeen;
         private static int _calibratedQuads;
         private static int _refusedQuads;
@@ -134,7 +132,9 @@ namespace com.github.lhervier.ksp.pqsbench
         /// <summary>Announces what is being measured, once the patches are in.</summary>
         public static void Announce()
         {
-            Log.Info($"Measuring, benchMode {_mode}, {PQS.cacheVertCount} vertices per quad."
+            // How many vertices a quad holds is not said here: PQS.cacheVertCount is still 0 this early,
+            // and only gets its value when the first terrain sphere starts up. The dump reports it.
+            Log.Info($"Measuring, benchMode {_mode}."
                 + " Alt+F8 dumps what has been recorded, Alt+F7 throws it away.");
             if (Log.IsDebugEnabled)
             {
@@ -348,38 +348,47 @@ namespace com.github.lhervier.ksp.pqsbench
         /// <summary>Forgets whatever a placement worked out for the quad it was last given.</summary>
         private delegate void QuadReset();
 
-        // Both formulas are called through a delegate of the same type, and both are preceded by a reset
-        // of the same type. The fix has to be reached that way, since it lives in another assembly and
-        // this mod must run without it; putting stock behind the same indirection means the calibration
-        // compares the two formulas rather than the cost of reaching one of them.
-        private static VertexPlacer _stockPlace;
-        private static QuadReset _stockReset;
-        private static VertexPlacer _fixPlace;
-        private static QuadReset _fixReset;
+        // The formulas being compared. Stock and hoisted stock differ by one thing only — when the two
+        // Transforms are read — so what separates them is what reading them costs; hoisted stock and the
+        // fix differ by the arithmetic alone, since both work the quad out once and test for it per vertex.
+        private const int FormulaStock = 0;
+        private const int FormulaHoisted = 1;
+        private const int FormulaFix = 2;
+        private const int FormulaCount = 3;
+
+        private static readonly string[] FormulaNames = { "stock", "stockHoisted", "fixed" };
+
+        // Every formula is called through a delegate of the same type, and preceded by a reset of the same
+        // type. The fix has to be reached that way, since it lives in another assembly and this mod must
+        // run without it; putting the other two behind the same indirection means the calibration compares
+        // formulas rather than ways of reaching one of them.
+        private static readonly VertexPlacer[] _place = new VertexPlacer[FormulaCount];
+        private static readonly QuadReset[] _reset = new QuadReset[FormulaCount];
+        private static readonly long[] _ticks = new long[FormulaCount];
 
         private static bool _bindingTried;
-
-        private static bool CalibrationReady { get { return _fixPlace != null; } }
 
         // The type calibrate compares stock against, and the Harmony id it patches under.
         private const string FixTypeName = "com.github.lhervier.ksp.terrainprecisionfix.TerrainPrecisionFixMod";
         private const string FixHarmonyId = "com.github.lhervier.ksp.terrainprecisionfix";
 
         /// <summary>
-        /// Looks up the vertex placement of Terrain Precision Fix, if that mod is installed. Both sides are
-        /// bound here, so that neither is favoured by how it is reached.
+        /// Binds the formulas to compare, the fix among them if that mod is installed. All of them are
+        /// bound here, so that none is favoured by how it is reached.
         /// </summary>
         private static void BindCalibration()
         {
             _bindingTried = true;
-            _stockPlace = PlaceVertexStock;
-            _stockReset = ResetNothing;
+            _place[FormulaStock] = PlaceVertexStock;
+            _reset[FormulaStock] = ResetNothing;
+            _place[FormulaHoisted] = PlaceVertexStockHoisted;
+            _reset[FormulaHoisted] = ForgetHoisted;
 
             Type fixType = AccessTools.TypeByName(FixTypeName);
             if (fixType == null)
             {
-                Log.Warning("Terrain Precision Fix is not installed, so there is no second formula to time"
-                    + " against stock: benchMode calibrate records nothing. The counters are unaffected.");
+                Log.Warning("Terrain Precision Fix is not installed: calibrate still compares stock with"
+                    + " hoisted stock, but has nothing to time the fix on.");
                 return;
             }
 
@@ -391,20 +400,20 @@ namespace com.github.lhervier.ksp.pqsbench
             if (place == null || forget == null)
             {
                 Log.Error("Terrain Precision Fix is installed but does not have the methods this"
-                    + " calibration replays. It has probably changed since; benchMode calibrate records"
-                    + " nothing.");
+                    + " calibration replays. It has probably changed since; only the two stock formulas"
+                    + " are timed.");
                 return;
             }
 
             try
             {
-                _fixPlace = (VertexPlacer)Delegate.CreateDelegate(typeof(VertexPlacer), place);
-                _fixReset = (QuadReset)Delegate.CreateDelegate(typeof(QuadReset), forget);
+                _place[FormulaFix] = (VertexPlacer)Delegate.CreateDelegate(typeof(VertexPlacer), place);
+                _reset[FormulaFix] = (QuadReset)Delegate.CreateDelegate(typeof(QuadReset), forget);
             }
             catch (Exception e)
             {
-                _fixPlace = null;
-                _fixReset = null;
+                _place[FormulaFix] = null;
+                _reset[FormulaFix] = null;
                 Log.Error($"Could not reach the vertex placement of Terrain Precision Fix: {e}");
                 return;
             }
@@ -412,19 +421,14 @@ namespace com.github.lhervier.ksp.pqsbench
         }
 
         /// <summary>
-        /// Times the stock vertex placement against the one Terrain Precision Fix puts in its place,
-        /// replaying both over the vertices of a quad that has just been built. Leaves the quad exactly as
-        /// it found it.
+        /// Times the vertex placements against each other, replaying each over the vertices of a quad that
+        /// has just been built. Leaves the quad exactly as it found it.
         /// </summary>
         private static void Calibrate(PQS sphere, PQ quad)
         {
             if (!_bindingTried)
             {
                 BindCalibration();
-            }
-            if (!CalibrationReady)
-            {
-                return;
             }
 
             int count = PQS.cacheVertCount;
@@ -445,28 +449,33 @@ namespace com.github.lhervier.ksp.pqsbench
             Array.Copy(PQS.verts, _savedSphereVerts, count);
 
             // One round of each before the clock starts: the first pass over an array that is not in cache
-            // would otherwise be charged to whichever formula runs first. That round also says whether the
-            // fix applies to this quad at all — installed but inactive, it would place nothing, and stock
-            // would be timed against an empty loop.
-            Run(_stockPlace, _stockReset, sphere, quad, count, 1);
-            if (Run(_fixPlace, _fixReset, sphere, quad, count, 1) < count)
+            // would otherwise be charged to whichever formula runs first. The fix's round also says whether
+            // it applies to this quad at all — installed but inactive, it would place nothing, and the
+            // others would be timed against an empty loop.
+            for (int formula = 0; formula < FormulaCount; formula++)
             {
-                Restore(quad, count);
-                _refusedQuads++;
-                return;
+                if (_place[formula] == null)
+                {
+                    continue;
+                }
+                if (Run(formula, sphere, quad, count, 1) < count && formula == FormulaFix)
+                {
+                    Restore(quad, count);
+                    _refusedQuads++;
+                    return;
+                }
             }
 
-            // The order alternates from one calibrated quad to the next, so that whatever is left of that
-            // effect does not always land on the same side.
-            if ((_calibratedQuads & 1) == 0)
+            // The order rotates from one calibrated quad to the next, so that each formula runs as often
+            // first as last and whatever is left of that effect does not always land on the same one.
+            for (int step = 0; step < FormulaCount; step++)
             {
-                _stockTicks += Time(_stockPlace, _stockReset, sphere, quad, count);
-                _fixedTicks += Time(_fixPlace, _fixReset, sphere, quad, count);
-            }
-            else
-            {
-                _fixedTicks += Time(_fixPlace, _fixReset, sphere, quad, count);
-                _stockTicks += Time(_stockPlace, _stockReset, sphere, quad, count);
+                int formula = (_calibratedQuads + step) % FormulaCount;
+                if (_place[formula] == null)
+                {
+                    continue;
+                }
+                _ticks[formula] += Time(formula, sphere, quad, count);
             }
 
             Restore(quad, count);
@@ -480,10 +489,10 @@ namespace com.github.lhervier.ksp.pqsbench
             Array.Copy(_savedSphereVerts, PQS.verts, count);
         }
 
-        private static long Time(VertexPlacer place, QuadReset reset, PQS sphere, PQ quad, int count)
+        private static long Time(int formula, PQS sphere, PQ quad, int count)
         {
             long start = Stopwatch.GetTimestamp();
-            Run(place, reset, sphere, quad, count, CalibrationRounds);
+            Run(formula, sphere, quad, count, CalibrationRounds);
             return Stopwatch.GetTimestamp() - start;
         }
 
@@ -491,8 +500,10 @@ namespace com.github.lhervier.ksp.pqsbench
         /// Replays one placement over every vertex of a quad, as many times as asked, and returns how many
         /// vertices its last round placed.
         /// </summary>
-        private static int Run(VertexPlacer place, QuadReset reset, PQS sphere, PQ quad, int count, int rounds)
+        private static int Run(int formula, PQS sphere, PQ quad, int count, int rounds)
         {
+            VertexPlacer place = _place[formula];
+            QuadReset reset = _reset[formula];
             int placed = 0;
             for (int round = 0; round < rounds; round++)
             {
@@ -515,6 +526,11 @@ namespace com.github.lhervier.ksp.pqsbench
         /// <summary>The stock placement, as PQS.BuildVertexSurfaceRelative does it.</summary>
         private static bool PlaceVertexStock(PQS sphere, PQ quad, int index, Vector3d vertex)
         {
+            // Both Transforms are read per vertex, because stock reads them per vertex: the method this
+            // replays is called once for each one, and reads base.transform and buildQuad.transform every
+            // time. Hoisting them out of the loop measures something the game never does — which is what
+            // the formula below is for.
+            //
             // Stock keeps the vertex relative to the centre of the body alongside the quad-local one: the
             // normals are computed from it. It holds the intermediate in a field of PQS rather than in a
             // local, which is the one liberty taken here, and it is taken on the stock side.
@@ -527,6 +543,38 @@ namespace com.github.lhervier.ksp.pqsbench
         /// <summary>Stock works nothing out per quad, so its reset has nothing to do.</summary>
         private static void ResetNothing()
         {
+        }
+
+        // What the hoisted formula keeps from one vertex to the next, and the quad it holds for.
+        private static PQ _hoistedFor;
+        private static Transform _hoistedSphereTransform;
+        private static Transform _hoistedQuadTransform;
+
+        /// <summary>
+        /// The stock arithmetic, with the two Transforms read once per quad instead of once per vertex.
+        /// Not a placement the game contains: it stands between the two others, and what separates it from
+        /// stock is what reading a Transform costs.
+        /// </summary>
+        private static bool PlaceVertexStockHoisted(PQS sphere, PQ quad, int index, Vector3d vertex)
+        {
+            // Kept per quad the same way the fix keeps its own frame, and tested for on every vertex the
+            // same way: the two differ by their arithmetic, not by how they are organised.
+            if (!ReferenceEquals(quad, _hoistedFor))
+            {
+                _hoistedFor = quad;
+                _hoistedSphereTransform = sphere.transform;
+                _hoistedQuadTransform = quad.transform;
+            }
+            Vector3 planetRelative = _hoistedSphereTransform.TransformPoint((Vector3)vertex);
+            PQS.verts[index] = vertex;
+            quad.verts[index] = _hoistedQuadTransform.InverseTransformPoint(planetRelative);
+            return true;
+        }
+
+        /// <summary>Forgets the Transforms kept for a quad, so that the next vertex reads them again.</summary>
+        private static void ForgetHoisted()
+        {
+            _hoistedFor = null;
         }
 
         // ==========================================================================
@@ -565,12 +613,27 @@ namespace com.github.lhervier.ksp.pqsbench
 
             if (_calibratedVertices > 0)
             {
-                double stock = _stockTicks * TicksToNanoseconds / _calibratedVertices;
-                double patched = _fixedTicks * TicksToNanoseconds / _calibratedVertices;
-                Log.Info($"BENCH calibration;quads={_calibratedQuads};refusedQuads={_refusedQuads}"
-                    + $";verticesPerFormula={_calibratedVertices}"
-                    + $";stockNsPerVertex={F(stock, 1)};fixedNsPerVertex={F(patched, 1)}"
-                    + $";differenceNsPerVertex={F(patched - stock, 1)}");
+                string line = $"BENCH calibration;quads={_calibratedQuads};refusedQuads={_refusedQuads}"
+                    + $";verticesPerFormula={_calibratedVertices}";
+                for (int formula = 0; formula < FormulaCount; formula++)
+                {
+                    double ns = _ticks[formula] * TicksToNanoseconds / _calibratedVertices;
+                    line += $";{FormulaNames[formula]}NsPerVertex="
+                        + (_place[formula] == null ? "n/a" : F(ns, 1));
+                }
+
+                // What reading the two Transforms costs, and what the arithmetic costs, each being the
+                // distance between two formulas that differ by that alone.
+                double stockNs = _ticks[FormulaStock] * TicksToNanoseconds / _calibratedVertices;
+                double hoistedNs = _ticks[FormulaHoisted] * TicksToNanoseconds / _calibratedVertices;
+                line += $";transformReadsNsPerVertex={F(stockNs - hoistedNs, 1)}";
+                if (_place[FormulaFix] != null)
+                {
+                    double fixNs = _ticks[FormulaFix] * TicksToNanoseconds / _calibratedVertices;
+                    line += $";arithmeticNsPerVertex={F(fixNs - hoistedNs, 1)}"
+                        + $";differenceNsPerVertex={F(fixNs - stockNs, 1)}";
+                }
+                Log.Info(line);
             }
             else if (_mode == BenchMode.Calibrate)
             {
@@ -612,8 +675,7 @@ namespace com.github.lhervier.ksp.pqsbench
             _full = false;
             _open = false;
             _warpedSeconds = 0;
-            _stockTicks = 0L;
-            _fixedTicks = 0L;
+            Array.Clear(_ticks, 0, _ticks.Length);
             _topLevelQuadsSeen = 0;
             _calibratedQuads = 0;
             _refusedQuads = 0;
