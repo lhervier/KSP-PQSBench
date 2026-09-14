@@ -125,6 +125,15 @@ namespace com.github.lhervier.ksp.pqsbench
                 // the same wrapper the game pays for it.
                 _place[FormulaInstalled] =
                     (VertexPlacer)Delegate.CreateDelegate(typeof(VertexPlacer), placement);
+
+                // The yardstick is not a transcription of the stock placement either: Harmony copies the
+                // original method's IL into PlaceVertexStock, so it reads the same fields in the same
+                // order, whatever is patching the real method today. A hand-written copy cannot reach
+                // those fields as cheaply and measured 8 % low.
+                new Harmony(PQSBenchMod.HarmonyId)
+                    .CreateReversePatcher(placement, new HarmonyMethod(
+                        AccessTools.Method(typeof(Calibration), "PlaceVertexStock")))
+                    .Patch();
                 _place[FormulaStock] = PlaceVertexStock;
                 _place[FormulaHarness] = PlaceNothing;
             }
@@ -302,22 +311,15 @@ namespace com.github.lhervier.ksp.pqsbench
             }
         }
 
-        /// <summary>The stock placement, line for line as PQS.BuildVertexSurfaceRelative does it.</summary>
+        /// <summary>
+        /// The stock vertex placement, still reachable in a run where the real method is patched.
+        /// </summary>
         private static void PlaceVertexStock(PQS sphere, PQS.VertexBuildData data)
         {
-            // Both Transforms are read per vertex, because stock reads them per vertex: the method this
-            // copies is called once for each one, and reads base.transform and buildQuad.transform every
-            // time.
-            //
-            // Stock takes its inputs from private fields of PQS, which a copy cannot reach as cheaply. They
-            // are read here off the VertexBuildData the build fills for every vertex anyway: public fields
-            // of a class, holding the same values, at the same kind of cost.
-            PQ quad = data.buildQuad;
-            int index = data.vertIndex;
-            Vector3d vertRel = data.directionFromCenter * data.vertHeight;
-            Vector3 planetRel = sphere.transform.TransformPoint((Vector3)vertRel);
-            PQS.verts[index] = vertRel;
-            quad.verts[index] = quad.transform.InverseTransformPoint(planetRel);
+            // Bind replaces this body with the original IL of PQS.BuildVertexSurfaceRelative, so what runs
+            // here is the stock placement itself and cannot drift from it: the same private fields of PQS
+            // read in the same order, none of which a hand-written copy can reach without paying for it.
+            throw new NotImplementedException("Harmony fills this in from the stock method");
         }
 
         /// <summary>Places nothing: what it measures is what the replay itself costs.</summary>

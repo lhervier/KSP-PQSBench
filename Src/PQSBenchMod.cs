@@ -17,7 +17,7 @@ namespace com.github.lhervier.ksp.pqsbench
     [KSPAddon(KSPAddon.Startup.Instantly, true)]
     public class PQSBenchMod : MonoBehaviour
     {
-        private const string HarmonyId = "com.github.lhervier.ksp.pqsbench";
+        internal const string HarmonyId = "com.github.lhervier.ksp.pqsbench";
 
         // Read through KSP's own key bindings rather than UnityEngine.Input, which lives in a module this
         // mod does not reference.
