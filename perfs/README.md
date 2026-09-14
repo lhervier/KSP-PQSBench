@@ -36,7 +36,6 @@ the highest subdivision level** — the ones carrying a collider.
 | `stockNsPerVertex` | 284.7 |
 | `installedNsPerVertex` | 285.9 |
 | `differenceNsPerVertex` | +1.2 |
-| `differingQuads` | 0 / 30 |
 
 **A stock terrain vertex is placed in about 285 ns.** `PQS.BuildVertexSurfaceRelative` makes five trips
 into the native engine for it: `Transform.TransformPoint`, `Transform.InverseTransformPoint`, and two

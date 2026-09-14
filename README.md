@@ -145,12 +145,6 @@ That is the one thing a mod has to do to be measured honestly here:
 It is not a rule invented for this: a quad can be rebuilt after having been moved, so anything worked
 out from it is stale at that point anyway.
 
-### What the dump says about the placement
-
-`differingQuads` counts the calibrated quads where the installed placement put a vertex somewhere other
-than stock does, compared exactly. Zero means either that nothing is patching the placement, or that
-what is changes what it costs without changing the terrain.
-
 ## What stock costs
 
 A reference run of a KSP with nothing patching the terrain is kept in [`perfs/`](perfs/), with its logs:
