@@ -376,27 +376,36 @@ namespace com.github.lhervier.ksp.pqsbench.bench.calibrate
         {
             if (_calibratedVertices > 0)
             {
-                double harnessNs = _ticks[Constants.FormulaHarness] * TicksToNanoseconds / _calibratedVertices;
-                double stockNs = _ticks[Constants.FormulaStock] * TicksToNanoseconds / _calibratedVertices;
-                double installedNs = _ticks[Constants.FormulaInstalled] * TicksToNanoseconds / _calibratedVertices;
+                // Each variable is named after the column it is written to.
+                double harnessNsPerVertex = _ticks[Constants.FormulaHarness] * TicksToNanoseconds / _calibratedVertices;
+                double stockRawNsPerVertex = _ticks[Constants.FormulaStock] * TicksToNanoseconds / _calibratedVertices;
+                double installedRawNsPerVertex = _ticks[Constants.FormulaInstalled] * TicksToNanoseconds / _calibratedVertices;
 
                 // The two figures to read are the net ones: what a placement costs on its own, the replay's
                 // own cost taken off both. The raw ones are there so that the subtraction can be checked.
+                double stockNsPerVertex = stockRawNsPerVertex - harnessNsPerVertex;
+                double installedNsPerVertex = installedRawNsPerVertex - harnessNsPerVertex;
+                double differenceNsPerVertex = installedRawNsPerVertex - stockRawNsPerVertex;
+
                 Log.Info($"BENCH calibration;quads={_calibratedQuads}"
                     + $";roundsPerQuad={Constants.Rounds};verticesPerFormula={_calibratedVertices}"
-                    + $";stockNsPerVertex={FormatUtils.F(stockNs - harnessNs, 1)}"
-                    + $";installedNsPerVertex={FormatUtils.F(installedNs - harnessNs, 1)}"
-                    + $";differenceNsPerVertex={FormatUtils.F(installedNs - stockNs, 1)}"
-                    + $";harnessNsPerVertex={FormatUtils.F(harnessNs, 1)}"
-                    + $";stockRawNsPerVertex={FormatUtils.F(stockNs, 1)}"
-                    + $";installedRawNsPerVertex={FormatUtils.F(installedNs, 1)}");
+                    + $";stockNsPerVertex={FormatUtils.F(stockNsPerVertex, 1)}"
+                    + $";installedNsPerVertex={FormatUtils.F(installedNsPerVertex, 1)}"
+                    + $";differenceNsPerVertex={FormatUtils.F(differenceNsPerVertex, 1)}"
+                    + $";harnessNsPerVertex={FormatUtils.F(harnessNsPerVertex, 1)}"
+                    + $";stockRawNsPerVertex={FormatUtils.F(stockRawNsPerVertex, 1)}"
+                    + $";installedRawNsPerVertex={FormatUtils.F(installedRawNsPerVertex, 1)}");
             }
             else
             {
-                Log.Warning("BENCH calibration;quads=0;nothing was calibrated: "
-                    + (_broken
-                        ? "re-entering PQS.BuildQuad rebuilt the quad, see the error above"
-                        : "no quad of the highest subdivision level was built"));
+                Log.Warning(
+                    "BENCH calibration;quads=0;nothing was calibrated: " + 
+                    (
+                        _broken
+                            ? "re-entering PQS.BuildQuad rebuilt the quad, see the error above"
+                            : "no quad of the highest subdivision level was built"
+                    )
+                );
             }
         }
 
