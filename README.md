@@ -72,9 +72,10 @@ comparing their figures rests on. It is also where a run that warped shows up: `
 
 ### `counters`: one line per second of game time
 
-Time warp is skipped entirely: the craft crosses the ground far too fast for a sample to mean anything.
-A `BENCH counters` line gives how many samples were kept and how many seconds were dropped to warp,
-then one line per sample:
+Time warp is outside the protocol: the craft crosses the ground far too fast for a sample to mean
+anything. So is leaving the flight scene, or losing the active craft, in the middle of a run. Any of these
+stops the recording for good, with a warning in `KSP.log`; the samples closed before it are still dumped. A `BENCH counters` line gives how many samples were kept, then one line per
+sample:
 
 | column | |
 |---|---|

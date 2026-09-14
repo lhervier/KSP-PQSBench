@@ -33,8 +33,8 @@ namespace com.github.lhervier.ksp.pqsbench
         internal const double SampleSeconds = 1.0;
         internal const int MaxSamples = 4096;
 
-        // The time warp rate above which nothing is recorded. Slightly above 1, so that the rate reported at
-        // normal speed is never taken for a warp.
+        // The time warp rate above which recording stops for the rest of the run. Slightly above 1, so that
+        // the rate reported at normal speed is never taken for a warp.
         internal const float MaxUnwarpedRate = 1.05f;
 
         // ---- CalibrateBench ----

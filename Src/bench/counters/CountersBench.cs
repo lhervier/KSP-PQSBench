@@ -14,12 +14,32 @@ namespace com.github.lhervier.ksp.pqsbench.bench.counters
     {
         private readonly Sample[] _samples = new Sample[Constants.MaxSamples];
         private int _sampleCount;
-        private bool _full;
+
+        // Whether recording has stopped for the rest of the run, the samples closed before it being kept.
+        private bool _stopped;
 
         private Sample _current;
         private bool _open;
         private long _currentStartTicks;
-        private int _warpedSeconds;
+
+        /// <summary>
+        /// Stops recording for the rest of the run, dropping the sample in progress, and says why. Only the
+        /// first call says anything.
+        /// </summary>
+        private void Stop(string reason)
+        {
+            if (_stopped)
+            {
+                return;
+            }
+            _stopped = true;
+            _open = false;
+            Log.Warning(reason);
+        }
+
+        // =======================================================
+        // Subscribe
+        // =======================================================
 
         /// <summary>Listens to every quad built and to every terrain update.</summary>
         public void Subscribe()
@@ -28,52 +48,74 @@ namespace com.github.lhervier.ksp.pqsbench.bench.counters
             UpdateQuadsPatch.Updated += QuadsUpdated;
         }
 
+        // =======================================================
+        // On Frame
+        // =======================================================
+
         /// <summary>Counts a frame, and closes the current sample once a second of game time has passed.</summary>
         public void OnFrame()
         {
-            if (_full || !HighLogic.LoadedSceneIsFlight)
+            if (_stopped)
             {
                 return;
             }
 
-            // Time warp is not measured at all: the craft crosses the ground far too fast for a sample to
-            // mean anything, and a sample per second of game time would be hundreds of samples per second.
-            if (TimeWarp.CurrentRate > Constants.MaxUnwarpedRate)
+            // Leaving flight in the middle of a run is outside the protocol too: the quads other scenes build
+            // would pile up in the open sample, which would close on the way back with both scenes mixed.
+            if (!HighLogic.LoadedSceneIsFlight)
             {
                 if (_open)
                 {
-                    _open = false;
-                    _warpedSeconds++;
+                    Stop("Flight scene left, the run no longer follows the protocol: the sample it interrupted is"
+                        + " dropped and nothing more is recorded. Dump what was (Alt+F8) and start again (Alt+F7)");
                 }
                 return;
             }
 
+            // Time warp is outside the protocol: the craft crosses the ground far too fast for a sample to
+            // mean anything, and the ground flown over after it is no longer the ground another run flew.
+            // The run is given up rather than patched around.
+            if (TimeWarp.CurrentRate > Constants.MaxUnwarpedRate)
+            {
+                Stop("Time warp engaged, the run no longer follows the protocol: the sample it interrupted is"
+                    + " dropped and nothing more is recorded. Dump what was (Alt+F8) and start again (Alt+F7)");
+                return;
+            }
+
+            // Losing the craft in the middle of a run as well: the open sample would go on timing and
+            // counting quads without counting frames.
             Vessel vessel = FlightGlobals.ActiveVessel;
             if (vessel == null)
             {
+                if (_open)
+                {
+                    Stop("Active vessel lost, the run no longer follows the protocol: the sample it interrupted is"
+                        + " dropped and nothing more is recorded. Dump what was (Alt+F8) and start again (Alt+F7)");
+                }
                 return;
             }
             double ut = Planetarium.GetUniversalTime();
 
-            if (!_open)
+            if (_open)
             {
-                Open(ut);
-                return;
-            }
+                _current.Frames++;
+                if (ut - _current.Ut < Constants.SampleSeconds)
+                {
+                    return;
+                }
 
-            _current.Frames++;
-            if (ut - _current.Ut < Constants.SampleSeconds)
-            {
-                return;
+                // Where the craft was is read at the end of the sample rather than averaged over it: across a
+                // second of a ballistic pass it barely moves, and its only job is to say where this was taken.
+                _current.UtSpan = ut - _current.Ut;
+                _current.RealSeconds = (Stopwatch.GetTimestamp() - _currentStartTicks) / (double)Stopwatch.Frequency;
+                _current.Altitude = vessel.altitude;
+                _current.Speed = vessel.srfSpeed;
+                Close();
+                if (_stopped)
+                {
+                    return;
+                }
             }
-
-            // Where the craft was is read at the end of the sample rather than averaged over it: across a
-            // second of a ballistic pass it barely moves, and its only job is to say where this was taken.
-            _current.UtSpan = ut - _current.Ut;
-            _current.RealSeconds = (Stopwatch.GetTimestamp() - _currentStartTicks) / (double)Stopwatch.Frequency;
-            _current.Altitude = vessel.altitude;
-            _current.Speed = vessel.srfSpeed;
-            Close();
             Open(ut);
         }
 
@@ -83,9 +125,10 @@ namespace com.github.lhervier.ksp.pqsbench.bench.counters
             _current.Ut = ut;
             _current.SpeedLevelCap = int.MaxValue;
 
-            // The frame a sample opens on is counted here, since the clock starts on it too. The frame two
-            // samples straddle therefore counts in both, which is what it costs: it spans both.
-            _current.Frames = 1;
+            // The clock starts here and stops at the same point of a later frame, so it spans as many frame
+            // durations as frames that go by after this one: this frame is counted by the sample it closes,
+            // not by the one it opens.
+            _current.Frames = 0;
             _currentStartTicks = Stopwatch.GetTimestamp();
             _open = true;
         }
@@ -94,17 +137,16 @@ namespace com.github.lhervier.ksp.pqsbench.bench.counters
         {
             if (_sampleCount >= Constants.MaxSamples)
             {
-                if (!_full)
-                {
-                    _full = true;
-                    Log.Warning(Constants.MaxSamples +" samples recorded, no more room: dump them (Alt+F8) and"
-                        + " start again (Alt+F7)");
-                }
-                _open = false;
+                Stop(Constants.MaxSamples + " samples recorded, no more room: dump them (Alt+F8) and"
+                    + " start again (Alt+F7)");
                 return;
             }
             _samples[_sampleCount++] = _current;
         }
+
+        // ======================================================
+        // Quad built
+        // ======================================================
 
         /// <summary>Records one terrain quad actually built, and the time it took.</summary>
         private void QuadBuilt(PQS sphere, PQ quad, long ticks, bool topLevel)
@@ -138,6 +180,10 @@ namespace com.github.lhervier.ksp.pqsbench.bench.counters
             _current.MaxLevel = sphere.maxLevel;
         }
 
+        // ======================================================
+        // Quads updated
+        // ======================================================
+
         /// <summary>Records what one terrain update of one sphere cost, for one frame.</summary>
         private void QuadsUpdated(long ticks)
         {
@@ -148,10 +194,14 @@ namespace com.github.lhervier.ksp.pqsbench.bench.counters
             _current.UpdateTicks += ticks;
         }
 
+        // ======================================================
+        // Dump
+        // ======================================================
+
         /// <summary>Writes one line per sample recorded, as semicolon separated values.</summary>
         public void Dump()
         {
-            Log.Info($"BENCH counters;samples={FormatUtils.I(_sampleCount)};warpedSeconds={FormatUtils.I(_warpedSeconds)}");
+            Log.Info($"BENCH counters;samples={FormatUtils.I(_sampleCount)}");
             Log.Info("BENCH;sample;ut;utSpan;realSeconds;frames;fps;altitude;speed;quads;topLevelQuads"
                 + ";vertices;buildMs;topLevelBuildMs;updateMs;subdivisionAvg;subdivisionMax;speedLevelCap;maxLevel");
             for (int i = 0; i < _sampleCount; i++)
@@ -166,24 +216,38 @@ namespace com.github.lhervier.ksp.pqsbench.bench.counters
                 {
                     "BENCH",
                     FormatUtils.I(i),
-                    FormatUtils.F(s.Ut, 2), FormatUtils.F(s.UtSpan, 3), FormatUtils.F(s.RealSeconds, 3),
-                    FormatUtils.I(s.Frames), FormatUtils.F(fps, 1),
-                    FormatUtils.F(s.Altitude, 1), FormatUtils.F(s.Speed, 1),
-                    FormatUtils.I(s.Quads), FormatUtils.I(s.TopLevelQuads), FormatUtils.L(s.Vertices),
-                    FormatUtils.F(buildMs, 3), FormatUtils.F(topLevelBuildMs, 3), FormatUtils.F(updateMs, 3),
-                    FormatUtils.F(subdivisionAvg, 2), FormatUtils.I(s.SubdivisionMax),
-                    FormatUtils.I(s.SpeedLevelCap == int.MaxValue ? -1 : s.SpeedLevelCap), FormatUtils.I(s.MaxLevel)
+                    FormatUtils.F(s.Ut, 2), 
+                    FormatUtils.F(s.UtSpan, 3), 
+                    FormatUtils.F(s.RealSeconds, 3),
+                    FormatUtils.I(s.Frames), 
+                    FormatUtils.F(fps, 1),
+                    FormatUtils.F(s.Altitude, 1), 
+                    FormatUtils.F(s.Speed, 1),
+                    FormatUtils.I(s.Quads), 
+                    FormatUtils.I(s.TopLevelQuads), 
+                    FormatUtils.L(s.Vertices),
+                    FormatUtils.F(buildMs, 3), 
+                    FormatUtils.F(topLevelBuildMs, 3), 
+                    FormatUtils.F(updateMs, 3),
+                    FormatUtils.F(subdivisionAvg, 2), 
+                    FormatUtils.I(s.SubdivisionMax),
+                    FormatUtils.I(s.SpeedLevelCap == int.MaxValue ? -1 : s.SpeedLevelCap), 
+                    FormatUtils.I(s.MaxLevel)
                 }));
             }
         }
+
+        // ======================================================
+        // Reset
+        // ======================================================
+
 
         /// <summary>Throws away everything recorded, to start another run without restarting KSP.</summary>
         public void Reset()
         {
             _sampleCount = 0;
-            _full = false;
+            _stopped = false;
             _open = false;
-            _warpedSeconds = 0;
         }
     }
 }
