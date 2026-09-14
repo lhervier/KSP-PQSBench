@@ -24,8 +24,8 @@ namespace com.github.lhervier.ksp.pqsbench.bench.counters
         /// <summary>Listens to every quad built and to every terrain update.</summary>
         public void Subscribe()
         {
-            BuildQuadPatch.Built += RecordQuad;
-            UpdateQuadsPatch.Updated += RecordUpdate;
+            BuildQuadPatch.Built += QuadBuilt;
+            UpdateQuadsPatch.Updated += QuadsUpdated;
         }
 
         /// <summary>Counts a frame, and closes the current sample once a second of game time has passed.</summary>
@@ -107,7 +107,7 @@ namespace com.github.lhervier.ksp.pqsbench.bench.counters
         }
 
         /// <summary>Records one terrain quad actually built, and the time it took.</summary>
-        private void RecordQuad(PQS sphere, PQ quad, long ticks, bool topLevel)
+        private void QuadBuilt(PQS sphere, PQ quad, long ticks, bool topLevel)
         {
             if (!_open)
             {
@@ -139,7 +139,7 @@ namespace com.github.lhervier.ksp.pqsbench.bench.counters
         }
 
         /// <summary>Records what one terrain update of one sphere cost, for one frame.</summary>
-        private void RecordUpdate(long ticks)
+        private void QuadsUpdated(long ticks)
         {
             if (!_open)
             {
