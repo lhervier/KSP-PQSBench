@@ -1,44 +1,35 @@
-using System;
-using System.Collections.Generic;
 using System.Diagnostics;
-using System.Globalization;
 
-namespace com.github.lhervier.ksp.pqsbench
+namespace com.github.lhervier.ksp.pqsbench.bench.counters
 {
     /// <summary>
     /// What the terrain costs in flight: how many quads the game builds, how long each one takes, and how
-    /// much of a frame that is, cut into samples of one second of game time.
+    /// much of a frame that is, cut into samples of one second of game time. This is the whole of what the
+    /// counters mode measures, and nothing else runs alongside it.
     ///
     /// Everything is accumulated in memory, in arrays allocated once, and nothing is written until it is
     /// asked for: writing to KSP.log while measuring would cost more than what is being measured.
     /// </summary>
-    internal static class Counters
+    internal sealed class CountersBench : IBench
     {
-        // One sample per second of game time, so that two runs of the same flight are cut into pieces
-        // covering the same stretch of trajectory even if one of them runs slower than the other.
-        private const double SampleSeconds = 1.0;
-        private const int MaxSamples = 4096;
+        private readonly Sample[] _samples = new Sample[Constants.MaxSamples];
+        private int _sampleCount;
+        private bool _full;
 
-        private static readonly Sample[] _samples = new Sample[MaxSamples];
-        private static int _sampleCount;
-        private static bool _full;
+        private Sample _current;
+        private bool _open;
+        private long _currentStartTicks;
+        private int _warpedSeconds;
 
-        private static Sample _current;
-        private static bool _open;
-        private static long _currentStartTicks;
-        private static int _warpedSeconds;
-
-        // Terrain spheres whose subdivision settings have been logged, so that they are logged once.
-        private static readonly HashSet<PQS> _describedSpheres = new HashSet<PQS>();
-
-        /// <summary>How many samples have been recorded so far.</summary>
-        public static int SampleCount { get { return _sampleCount; } }
-
-        /// <summary>How many seconds of game time were dropped because the game was warping.</summary>
-        public static int WarpedSeconds { get { return _warpedSeconds; } }
+        /// <summary>Listens to every quad built and to every terrain update.</summary>
+        public void Subscribe()
+        {
+            BuildQuadPatch.Built += RecordQuad;
+            UpdateQuadsPatch.Updated += RecordUpdate;
+        }
 
         /// <summary>Counts a frame, and closes the current sample once a second of game time has passed.</summary>
-        public static void OnFrame()
+        public void OnFrame()
         {
             if (_full || !HighLogic.LoadedSceneIsFlight)
             {
@@ -47,7 +38,7 @@ namespace com.github.lhervier.ksp.pqsbench
 
             // Time warp is not measured at all: the craft crosses the ground far too fast for a sample to
             // mean anything, and a sample per second of game time would be hundreds of samples per second.
-            if (TimeWarp.CurrentRate > 1.05f)
+            if (TimeWarp.CurrentRate > Constants.MaxUnwarpedRate)
             {
                 if (_open)
                 {
@@ -71,7 +62,7 @@ namespace com.github.lhervier.ksp.pqsbench
             }
 
             _current.Frames++;
-            if (ut - _current.Ut < SampleSeconds)
+            if (ut - _current.Ut < Constants.SampleSeconds)
             {
                 return;
             }
@@ -86,7 +77,7 @@ namespace com.github.lhervier.ksp.pqsbench
             Open(ut);
         }
 
-        private static void Open(double ut)
+        private void Open(double ut)
         {
             _current = new Sample();
             _current.Ut = ut;
@@ -99,14 +90,14 @@ namespace com.github.lhervier.ksp.pqsbench
             _open = true;
         }
 
-        private static void Close()
+        private void Close()
         {
-            if (_sampleCount >= MaxSamples)
+            if (_sampleCount >= Constants.MaxSamples)
             {
                 if (!_full)
                 {
                     _full = true;
-                    Log.Warning(MaxSamples + " samples recorded, no more room: dump them (Alt+F8) and"
+                    Log.Warning(Constants.MaxSamples +" samples recorded, no more room: dump them (Alt+F8) and"
                         + " start again (Alt+F7)");
                 }
                 _open = false;
@@ -116,12 +107,8 @@ namespace com.github.lhervier.ksp.pqsbench
         }
 
         /// <summary>Records one terrain quad actually built, and the time it took.</summary>
-        public static void RecordQuad(PQS sphere, PQ quad, long ticks, bool topLevel)
+        private void RecordQuad(PQS sphere, PQ quad, long ticks, bool topLevel)
         {
-            if (_describedSpheres.Add(sphere))
-            {
-                DescribeSphere(sphere);
-            }
             if (!_open)
             {
                 return;
@@ -152,7 +139,7 @@ namespace com.github.lhervier.ksp.pqsbench
         }
 
         /// <summary>Records what one terrain update of one sphere cost, for one frame.</summary>
-        public static void RecordUpdate(long ticks)
+        private void RecordUpdate(long ticks)
         {
             if (!_open)
             {
@@ -161,50 +148,10 @@ namespace com.github.lhervier.ksp.pqsbench
             _current.UpdateTicks += ticks;
         }
 
-        /// <summary>
-        /// Logs, once per terrain sphere, what decides how far it subdivides: the altitude the highest
-        /// level appears under, which levels carry a collider, and how fast the craft may cross the ground
-        /// before the game stops building that highest level at all.
-        /// </summary>
-        private static void DescribeSphere(PQS sphere)
-        {
-            int maxLevel = sphere.maxLevel;
-
-            // A quad of level L splits when the craft is closer than subdivisionThresholds[L], so the
-            // highest level appears under the threshold of the level below it.
-            double highestLevelUnder = sphere.subdivisionThresholds != null
-                && maxLevel - 1 >= 0 && maxLevel - 1 < sphere.subdivisionThresholds.Length
-                ? sphere.subdivisionThresholds[maxLevel - 1]
-                : 0.0;
-
-            // PQS.UpdateVisual refuses to subdivide past the level whose quads are wider than what the
-            // craft crosses between two samples, which is a real time interval: the slower the game runs,
-            // the lower this ceiling falls.
-            double angleCap = 1.5707963 / Math.Pow(2.0, maxLevel) * sphere.maxQuadLenghtsPerFrame;
-            Log.Info($"BENCH sphere;name={sphere.name};radius={Fmt.F(sphere.radius, 0)}"
-                + $";minLevel={sphere.minLevel};maxLevel={maxLevel}"
-                + $";highestLevelUnder={Fmt.F(highestLevelUnder, 0)}"
-                + $";subdivisionOffAbove={Fmt.F(sphere.maxDetailDistance * sphere.radius, 0)}"
-                + $";maxAnglePerSample={angleCap.ToString("E3", CultureInfo.InvariantCulture)}"
-                + $";speedCapAt60Fps={Fmt.F(angleCap * sphere.radius * 60.0, 0)}");
-
-            PQSMod_QuadMeshColliders[] colliders =
-                sphere.GetComponentsInChildren<PQSMod_QuadMeshColliders>(true);
-            if (colliders == null || colliders.Length == 0)
-            {
-                Log.Info($"BENCH colliders;name={sphere.name};none");
-                return;
-            }
-            foreach (PQSMod_QuadMeshColliders collider in colliders)
-            {
-                Log.Info($"BENCH colliders;name={sphere.name};maxLevelOffset={collider.maxLevelOffset}"
-                    + $";lowestLevelWithCollider={maxLevel - Math.Abs(collider.maxLevelOffset)}");
-            }
-        }
-
         /// <summary>Writes one line per sample recorded, as semicolon separated values.</summary>
-        public static void Dump()
+        public void Dump()
         {
+            Log.Info($"BENCH counters;samples={FormatUtils.I(_sampleCount)};warpedSeconds={FormatUtils.I(_warpedSeconds)}");
             Log.Info("BENCH;sample;ut;utSpan;realSeconds;frames;fps;altitude;speed;quads;topLevelQuads"
                 + ";vertices;buildMs;topLevelBuildMs;updateMs;subdivisionAvg;subdivisionMax;speedLevelCap;maxLevel");
             for (int i = 0; i < _sampleCount; i++)
@@ -218,26 +165,25 @@ namespace com.github.lhervier.ksp.pqsbench
                 Log.Info(string.Join(";", new[]
                 {
                     "BENCH",
-                    Fmt.I(i),
-                    Fmt.F(s.Ut, 2), Fmt.F(s.UtSpan, 3), Fmt.F(s.RealSeconds, 3),
-                    Fmt.I(s.Frames), Fmt.F(fps, 1),
-                    Fmt.F(s.Altitude, 1), Fmt.F(s.Speed, 1),
-                    Fmt.I(s.Quads), Fmt.I(s.TopLevelQuads), Fmt.L(s.Vertices),
-                    Fmt.F(buildMs, 3), Fmt.F(topLevelBuildMs, 3), Fmt.F(updateMs, 3),
-                    Fmt.F(subdivisionAvg, 2), Fmt.I(s.SubdivisionMax),
-                    Fmt.I(s.SpeedLevelCap == int.MaxValue ? -1 : s.SpeedLevelCap), Fmt.I(s.MaxLevel)
+                    FormatUtils.I(i),
+                    FormatUtils.F(s.Ut, 2), FormatUtils.F(s.UtSpan, 3), FormatUtils.F(s.RealSeconds, 3),
+                    FormatUtils.I(s.Frames), FormatUtils.F(fps, 1),
+                    FormatUtils.F(s.Altitude, 1), FormatUtils.F(s.Speed, 1),
+                    FormatUtils.I(s.Quads), FormatUtils.I(s.TopLevelQuads), FormatUtils.L(s.Vertices),
+                    FormatUtils.F(buildMs, 3), FormatUtils.F(topLevelBuildMs, 3), FormatUtils.F(updateMs, 3),
+                    FormatUtils.F(subdivisionAvg, 2), FormatUtils.I(s.SubdivisionMax),
+                    FormatUtils.I(s.SpeedLevelCap == int.MaxValue ? -1 : s.SpeedLevelCap), FormatUtils.I(s.MaxLevel)
                 }));
             }
         }
 
         /// <summary>Throws away everything recorded, to start another run without restarting KSP.</summary>
-        public static void Reset()
+        public void Reset()
         {
             _sampleCount = 0;
             _full = false;
             _open = false;
             _warpedSeconds = 0;
-            _describedSpheres.Clear();
         }
     }
 }

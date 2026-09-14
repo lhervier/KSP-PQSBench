@@ -28,7 +28,12 @@ the file, start KSP again.
 |---|---|
 | `off` (default) | nothing, and nothing is patched |
 | `counters` | what the terrain costs in flight, one line per second of game time |
-| `calibrate` | adds what one terrain vertex costs, installed against stock — see below |
+| `calibrate` | what one terrain vertex costs, installed against stock — see below |
+
+**The two measuring modes are exclusive**, and one run measures one of them. `calibrate` does real work
+inside the very frames `counters` times, so a mode that ran both would publish frame times it had itself
+inflated. In `calibrate` the counters are not merely ignored: they are not recorded, and the patch that
+times a frame is not even installed.
 
 `logLevel` takes `Error`, `Warning`, `Info` (default), `Debug` or `Trace`. **Measure at `Info`**: the
 measurement itself writes at `Info`, and anything above it makes other mods write to `KSP.log` on the
@@ -44,8 +49,31 @@ measured. The recording is static — loading another save does not reset it, Al
 
 ## What comes out
 
-One line per second of game time, semicolon separated, for a spreadsheet or a script. Time warp is
-skipped entirely: the craft crosses the ground far too fast for a sample to mean anything.
+Everything is semicolon separated, for a spreadsheet or a script.
+
+### Which run it is
+
+Every dump opens the same way whatever the mode, so that a log says for itself what it measured and
+where:
+
+- `BENCH begin` — the mode, and the Harmony ids patching `PQS.BuildVertexSurfaceRelative` and
+  `PQS.BuildQuad`. Read at dump time, since nothing says in which order mods install their patches.
+- `BENCH run` — the save, the craft, the body it is flying over, the terrain detail preset, how many
+  vertices a quad holds, and the stretch flown: `utStart`, `utEnd` and `utSpan` against `realSeconds`,
+  with the altitude at both ends and the speed at the end. The run starts on the first frame in flight
+  after Alt+F7.
+- `BENCH sphere` and `BENCH colliders` — how the terrain of that body is set up, below.
+
+**Two runs are comparable when their `BENCH run` lines agree.** Same save, same craft, same body, same
+stretch of game time at the same altitude means the same ground was flown over twice, which is what
+comparing their figures rests on. It is also where a run that warped shows up: `utSpan` far above
+`realSeconds`.
+
+### `counters`: one line per second of game time
+
+Time warp is skipped entirely: the craft crosses the ground far too fast for a sample to mean anything.
+A `BENCH counters` line gives how many samples were kept and how many seconds were dropped to warp,
+then one line per sample:
 
 | column | |
 |---|---|
@@ -59,9 +87,12 @@ skipped entirely: the craft crosses the ground far too fast for a sample to mean
 | `subdivisionAvg`, `subdivisionMax` | the levels those quads were at |
 | `speedLevelCap`, `maxLevel` | the ceiling the game put on subdivision, and the sphere's own maximum |
 
-Plus, once per terrain sphere, a `BENCH sphere` line with what decides how far it subdivides, and a
-`BENCH colliders` line per `PQSMod_QuadMeshColliders` with its `maxLevelOffset`. Read on Kerbin and the
-Mun, KSP 1.12.5:
+### How the terrain of that body is set up
+
+A `BENCH sphere` line says what decides how far the sphere subdivides, and a `BENCH colliders` line per
+`PQSMod_QuadMeshColliders` gives its `maxLevelOffset`. Only the sphere the craft is flying over is
+described — a body with an ocean has a second one, which builds quads too. Read on Kerbin and the Mun,
+KSP 1.12.5:
 
 | sphere | minLevel | maxLevel | highest level appears under | lowest level with a collider | max angle per sample |
 |---|---|---|---|---|---|
@@ -113,10 +144,7 @@ That is the one thing a mod has to do to be measured honestly here:
 It is not a rule invented for this: a quad can be rebuilt after having been moved, so anything worked
 out from it is stale at that point anyway.
 
-### What the dump says about the run
-
-The `BENCH begin` line names the Harmony ids patching `PQS.BuildVertexSurfaceRelative` and
-`PQS.BuildQuad`, so a log says for itself which run it is.
+### What the dump says about the placement
 
 `differingQuads` counts the calibrated quads where the installed placement put a vertex somewhere other
 than stock does, compared exactly. Zero means either that nothing is patching the placement, or that
@@ -136,7 +164,8 @@ being measured installed, against a run with its folder taken out of `GameData`,
 and taking it out is the only honest reference: a mod left in place with its correction switched off
 still pays for its own patches on the path being timed.
 
-One run measures one configuration, since a Harmony patch is installed for the whole session. What makes
+One run measures one configuration in one mode, since both `GameData` and `settings.cfg` are read once
+at startup: a configuration takes two runs, one `counters` and one `calibrate`. What makes
 the runs comparable is that each of them carries its own `stock` yardstick, measured in the same frames
 as the thing under test: read `installedNsPerVertex` against the `stockNsPerVertex` of **its own run**,
 not against another machine's.
@@ -171,11 +200,12 @@ between two runs**, KSP overwrites it at every start.
 
 Load the save, **Alt+F7** once in flight so that the scene load is not in the samples, fly a couple of
 minutes at ×1, then **Alt+F8**. Use the same two marks in every run: the numbers are rates and ratios,
-but two runs are only comparable if they cover the same stretch of orbit.
+but two runs are only comparable if they cover the same stretch of orbit — which is what the `utStart`
+and `utSpan` of their `BENCH run` lines are there to show.
 
-A run is worth keeping when `topLevelQuads` is above zero and `speedLevelCap` sits at `maxLevel`. The
-`BENCH begin` line records which Harmony ids were patching the terrain, so a log says for itself which
-run it is.
+A `counters` run is worth keeping when `topLevelQuads` is above zero and `speedLevelCap` sits at
+`maxLevel`; a `calibrate` run, when `quads` is above zero. In both, the `BENCH run` and `BENCH begin`
+lines are what says the run was the one you meant to fly, with the mods you meant to have installed.
 
 ## Build
 

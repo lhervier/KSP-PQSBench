@@ -19,8 +19,6 @@ namespace com.github.lhervier.ksp.pqsbench
     /// </summary>
     internal static class Log
     {
-        private const string Prefix = "[PQSBench] ";
-
         private static LogLevel _level = LogLevel.Info;
 
         public static LogLevel Level => _level;
@@ -34,14 +32,14 @@ namespace com.github.lhervier.ksp.pqsbench
         public static void LoadLevel()
         {
             string folder = Path.GetDirectoryName(typeof(Log).Assembly.Location);
-            string path = Path.Combine(Path.Combine(folder, "PluginData"), "settings.cfg");
+            string path = Path.Combine(Path.Combine(folder, Constants.SettingsFolder), Constants.SettingsFile);
             if (!File.Exists(path))
             {
                 Warning($"No settings file at {path}, logging at {_level}");
                 return;
             }
 
-            string value = ConfigNode.Load(path)?.GetValue("logLevel");
+            string value = ConfigNode.Load(path)?.GetValue(Constants.LogLevelSetting);
             LogLevel parsed;
             if (Enum.TryParse(value, true, out parsed) && Enum.IsDefined(typeof(LogLevel), parsed))
             {
@@ -55,14 +53,14 @@ namespace com.github.lhervier.ksp.pqsbench
 
         public static void Error(string message)
         {
-            UnityEngine.Debug.LogError(Prefix + message);
+            UnityEngine.Debug.LogError(Constants.LogPrefix + message);
         }
 
         public static void Warning(string message)
         {
             if (_level >= LogLevel.Warning)
             {
-                UnityEngine.Debug.LogWarning(Prefix + message);
+                UnityEngine.Debug.LogWarning(Constants.LogPrefix + message);
             }
         }
 
@@ -70,7 +68,7 @@ namespace com.github.lhervier.ksp.pqsbench
         {
             if (_level >= LogLevel.Info)
             {
-                UnityEngine.Debug.Log(Prefix + message);
+                UnityEngine.Debug.Log(Constants.LogPrefix + message);
             }
         }
 
@@ -78,7 +76,7 @@ namespace com.github.lhervier.ksp.pqsbench
         {
             if (_level >= LogLevel.Debug)
             {
-                UnityEngine.Debug.Log(Prefix + "[DEBUG] " + message);
+                UnityEngine.Debug.Log(Constants.LogPrefix + "[DEBUG] " + message);
             }
         }
 
@@ -86,7 +84,7 @@ namespace com.github.lhervier.ksp.pqsbench
         {
             if (_level >= LogLevel.Trace)
             {
-                UnityEngine.Debug.Log(Prefix + "[TRACE] " + message);
+                UnityEngine.Debug.Log(Constants.LogPrefix + "[TRACE] " + message);
             }
         }
     }

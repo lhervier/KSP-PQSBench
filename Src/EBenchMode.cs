@@ -1,7 +1,7 @@
 namespace com.github.lhervier.ksp.pqsbench
 {
     /// <summary>What the measurement records, read from settings.cfg.</summary>
-    internal enum BenchMode
+    internal enum EBenchMode
     {
         /// <summary>Nothing at all: no patch is installed and the mod costs nothing.</summary>
         Off,

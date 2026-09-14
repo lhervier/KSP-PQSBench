@@ -1,4 +1,4 @@
-namespace com.github.lhervier.ksp.pqsbench
+namespace com.github.lhervier.ksp.pqsbench.bench.counters
 {
     /// <summary>What was accumulated over one second of game time.</summary>
     internal struct Sample

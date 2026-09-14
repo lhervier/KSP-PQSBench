@@ -2,38 +2,43 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Reflection;
+using com.github.lhervier.ksp.pqsbench.bench.calibrate;
+using com.github.lhervier.ksp.pqsbench.bench.counters;
 using HarmonyLib;
 using UnityEngine;
 
 namespace com.github.lhervier.ksp.pqsbench
 {
     /// <summary>
-    /// Runs the measurement: reads what to measure, installs the patches if there is anything to measure at
-    /// all, hands each built quad to whoever is measuring it, and listens for the keys that read the
-    /// results back. Modifier (Alt) + F8 dumps what has been recorded so far, Modifier + F7 throws it away.
+    /// Runs the measurement: reads what to measure, installs the terrain patches, lets the chosen mode
+    /// subscribe to what they raise, and listens for the keys that read the results back. Modifier (Alt)
+    /// + F8 dumps what has been recorded so far, Modifier + F7 throws it away.
     ///
-    /// What is measured lives in Counters and Calibration; nothing is measured here.
+    /// The two modes never run together: a mode measures its own thing and nothing else, so that its log
+    /// holds no figure the mode itself has disturbed. What each of them measures lives in CountersBench and
+    /// CalibrateBench; nothing is measured here.
     /// </summary>
     [KSPAddon(KSPAddon.Startup.Instantly, true)]
     public class PQSBenchMod : MonoBehaviour
     {
-        internal const string HarmonyId = "com.github.lhervier.ksp.pqsbench";
-
         // Read through KSP's own key bindings rather than UnityEngine.Input, which lives in a module this
         // mod does not reference.
-        private static readonly KeyBinding _dump = new KeyBinding(KeyCode.F8);
-        private static readonly KeyBinding _reset = new KeyBinding(KeyCode.F7);
+        private static readonly KeyBinding _dump = new KeyBinding(Constants.DumpKey);
+        private static readonly KeyBinding _reset = new KeyBinding(Constants.ResetKey);
 
-        private static BenchMode _mode = BenchMode.Off;
+        private static EBenchMode _mode = EBenchMode.Off;
+
+        // The mode measuring, or null when nothing is.
+        private static IBench _bench;
 
         /// <summary>Whether anything is being measured at all.</summary>
-        private static bool Recording { get { return _mode != BenchMode.Off; } }
+        private static bool Recording { get { return _bench != null; } }
 
         private void Start()
         {
             Log.LoadLevel();
             LoadSettings();
-            Calibration.Enabled = _mode == BenchMode.Calibrate;
+            _bench = CreateBench(_mode);
             if (!Recording)
             {
                 Log.Info($"Version {typeof(PQSBenchMod).Assembly.GetName().Version} installed, measuring"
@@ -42,11 +47,15 @@ namespace com.github.lhervier.ksp.pqsbench
             }
             try
             {
-                new Harmony(HarmonyId).PatchAll(typeof(PQSBenchMod).Assembly);
+                // Every patch in both modes, whether the mode listens to it or not. One nobody listens to
+                // reads the clock twice per call and records nothing, outside anything calibrate times.
+                new Harmony(Constants.HarmonyId).PatchAll(typeof(PQSBenchMod).Assembly);
+                _bench.Subscribe();
             }
             catch (Exception e)
             {
                 Log.Error($"Could not install the measurement, nothing will be recorded: {e}");
+                _bench = null;
                 return;
             }
 
@@ -62,7 +71,8 @@ namespace com.github.lhervier.ksp.pqsbench
             {
                 return;
             }
-            Counters.OnFrame();
+            RunInfo.NoteFrame();
+            _bench.OnFrame();
             if (!GameSettings.MODIFIER_KEY.GetKey())
             {
                 return;
@@ -84,7 +94,7 @@ namespace com.github.lhervier.ksp.pqsbench
         private static void LoadSettings()
         {
             string folder = Path.GetDirectoryName(typeof(PQSBenchMod).Assembly.Location);
-            string path = Path.Combine(Path.Combine(folder, "PluginData"), "settings.cfg");
+            string path = Path.Combine(Path.Combine(folder, Constants.SettingsFolder), Constants.SettingsFile);
             if (!File.Exists(path))
             {
                 return;
@@ -96,20 +106,34 @@ namespace com.github.lhervier.ksp.pqsbench
                 return;
             }
 
-            string mode = node.GetValue("benchMode");
+            string mode = node.GetValue(Constants.BenchModeSetting);
             if (string.IsNullOrEmpty(mode))
             {
                 return;
             }
 
-            BenchMode parsed;
-            if (Enum.TryParse(mode, true, out parsed) && Enum.IsDefined(typeof(BenchMode), parsed))
+            EBenchMode parsed;
+            if (Enum.TryParse(mode, true, out parsed) && Enum.IsDefined(typeof(EBenchMode), parsed))
             {
                 _mode = parsed;
             }
             else
             {
                 Log.Warning("Unknown benchMode '" + mode + "' in " + path + ", measuring nothing");
+            }
+        }
+
+        /// <summary>The mode a benchMode stands for, or null for one that measures nothing.</summary>
+        private static IBench CreateBench(EBenchMode mode)
+        {
+            switch (mode)
+            {
+                case EBenchMode.Counters:
+                    return new CountersBench();
+                case EBenchMode.Calibrate:
+                    return new CalibrateBench();
+                default:
+                    return null;
             }
         }
 
@@ -127,47 +151,12 @@ namespace com.github.lhervier.ksp.pqsbench
             }
         }
 
-        /// <summary>Hands one terrain quad the game has just built to whoever is measuring it.</summary>
-        internal static void OnQuadBuilt(PQS sphere, PQ quad, long ticks)
-        {
-            bool topLevel = IsTopLevelQuad(quad);
-            Counters.RecordQuad(sphere, quad, ticks, topLevel);
-            if (topLevel)
-            {
-                Calibration.Offer(sphere, quad);
-            }
-        }
-
-        /// <summary>
-        /// Whether this quad is one of the highest subdivision level: the ones the game detaches into
-        /// LocalSpacePQStorage, which carry the collider craft stand on as long as the body's
-        /// PQSMod_QuadMeshColliders.maxLevelOffset is 0, and the only ones Terrain Precision Fix corrects.
-        /// </summary>
-        private static bool IsTopLevelQuad(PQ quad)
-        {
-            if (quad == null)
-            {
-                return false;
-            }
-            PQS sphere = quad.sphereRoot;
-
-            // Stock has two ways of placing vertices, and only the surface relative one detaches quads
-            // this way.
-            if (sphere == null || !sphere.surfaceRelativeQuads || sphere.LocalSpacePQStorage == null)
-            {
-                return false;
-            }
-            return quad.transform.parent == sphere.LocalSpacePQStorage.transform;
-        }
-
         /// <summary>Writes everything recorded so far to KSP.log, as semicolon separated lines.</summary>
         private static void Dump()
         {
-            Log.Info($"BENCH begin;mode={_mode};samples={Counters.SampleCount}"
-                + $";verticesPerQuad={PQS.cacheVertCount};warpedSeconds={Counters.WarpedSeconds}"
-                + $";{DescribeInstalled()}");
-            Counters.Dump();
-            Calibration.Dump();
+            Log.Info($"BENCH begin;mode={_mode};{DescribeInstalled()}");
+            RunInfo.Dump();
+            _bench.Dump();
             Log.Info("BENCH end");
         }
 
@@ -201,8 +190,8 @@ namespace com.github.lhervier.ksp.pqsbench
         /// <summary>Throws away everything recorded, to start another run without restarting KSP.</summary>
         private static void Reset()
         {
-            Counters.Reset();
-            Calibration.Reset();
+            RunInfo.Reset();
+            _bench.Reset();
             Log.Info("BENCH reset");
         }
     }

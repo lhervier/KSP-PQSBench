@@ -6,7 +6,7 @@ namespace com.github.lhervier.ksp.pqsbench
     /// Writes the numbers of the dump. The log is read by a spreadsheet or a script, so they are written
     /// with a dot whatever the machine's locale says.
     /// </summary>
-    internal static class Fmt
+    internal static class FormatUtils
     {
         public static string F(double value, int decimals)
         {
