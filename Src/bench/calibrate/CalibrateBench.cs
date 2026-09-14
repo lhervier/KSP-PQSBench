@@ -93,8 +93,11 @@ namespace com.github.lhervier.ksp.pqsbench.bench.calibrate
                 _vertexIndexField = AccessTools.FieldRefAccess<PQS, int>("vertexIndex");
                 _vbDataField = AccessTools.Field(typeof(PQS), "vbData");
 
-                MethodInfo placement = AccessTools.Method(typeof(PQS), "BuildVertexSurfaceRelative",
-                    new[] { typeof(PQS.VertexBuildData) });
+                MethodInfo placement = AccessTools.Method(
+                    typeof(PQS), 
+                    "BuildVertexSurfaceRelative",
+                    new[] { typeof(PQS.VertexBuildData) }
+                );
                 if (placement == null)
                 {
                     throw new MissingMethodException("PQS", "BuildVertexSurfaceRelative");
@@ -103,16 +106,25 @@ namespace com.github.lhervier.ksp.pqsbench.bench.calibrate
                 // Bound to the stock method, not to a copy of it. Harmony replaces what that method runs,
                 // so this calls whatever is patching it without having to know what that is — and it pays
                 // the same wrapper the game pays for it.
-                _place[Constants.FormulaInstalled] =
-                    (VertexPlacer)Delegate.CreateDelegate(typeof(VertexPlacer), placement);
+                _place[Constants.FormulaInstalled] = (VertexPlacer)Delegate.CreateDelegate(
+                    typeof(VertexPlacer), 
+                    placement
+                );
 
                 // The yardstick is not a transcription of the stock placement either: Harmony copies the
                 // original method's IL into PlaceVertexStock, so it reads the same fields in the same
                 // order, whatever is patching the real method today. A hand-written copy cannot reach
                 // those fields as cheaply and measured 8 % low.
                 new Harmony(Constants.HarmonyId)
-                    .CreateReversePatcher(placement, new HarmonyMethod(
-                        AccessTools.Method(typeof(CalibrateBench), "PlaceVertexStock")))
+                    .CreateReversePatcher(
+                        placement, 
+                        new HarmonyMethod(
+                            AccessTools.Method(
+                                typeof(CalibrateBench), 
+                                "PlaceVertexStock"
+                            )
+                        )
+                    )
                     .Patch();
                 _place[Constants.FormulaStock] = PlaceVertexStock;
                 _place[Constants.FormulaHarness] = PlaceNothing;
