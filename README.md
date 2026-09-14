@@ -32,8 +32,9 @@ the file, start KSP again.
 
 **The two measuring modes are exclusive**, and one run measures one of them. `calibrate` does real work
 inside the very frames `counters` times, so a mode that ran both would publish frame times it had itself
-inflated. In `calibrate` the counters are not merely ignored: they are not recorded, and the patch that
-times a frame is not even installed.
+inflated. In `calibrate` the counters are not merely ignored: nothing records them. The patch that times
+a frame is still installed, and reads the clock with no one listening, outside anything `calibrate`
+times.
 
 `logLevel` takes `Error`, `Warning`, `Info` (default), `Debug` or `Trace`. **Measure at `Info`**: the
 measurement itself writes at `Info`, and anything above it makes other mods write to `KSP.log` on the

@@ -10,8 +10,8 @@ namespace com.github.lhervier.ksp.pqsbench
         Counters,
 
         /// <summary>
-        /// Adds, on a sample of quads, whatever is patching the vertex placement timed against a copy of
-        /// the stock one.
+        /// What one terrain vertex costs: on a sample of quads, whatever is patching the vertex placement
+        /// timed against the stock one. Exclusive with Counters.
         /// </summary>
         Calibrate
     }

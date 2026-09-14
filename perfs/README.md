@@ -13,17 +13,19 @@ fly, and what makes a run worth keeping. What follows is what it produced.
 measuring mod — **nothing patching the terrain**. A command pod on rails in a circular orbit 5 km over
 the Mun, flown for 150 seconds of game time.
 
-Twice, because `calibrate` does real work of its own in the frame it measures, so frame times have to
-come from a separate run:
+Twice, because a run measures one mode, and `calibrate` does real work of its own in the frames
+`counters` times:
 
 | log | mode |
 |---|---|
 | [`mun-05km-stock-calibrate.log`](runs/mun-05km-stock-calibrate.log) | `calibrate` |
 | [`mun-05km-stock-counters.log`](runs/mun-05km-stock-counters.log) | `counters` |
 
-Both recorded 147 samples over 150 seconds and built **2 484 quads, of which exactly 960 of the highest
-subdivision level** — the ones carrying a collider. The craft is on rails, so loading the save covers
-the same ground every time, which is what makes two runs comparable at all.
+Their `BENCH run` lines say they are the same flight: the same save and craft over the Mun, starting at
+UT 335.56 at 4 999.8 m, for 149.9 and 151.1 seconds of game time against as much real time — no warp.
+The craft is on rails, so loading the save covers the same ground every time, which is what makes two
+runs comparable at all. The `counters` run recorded 148 samples and built **2 492 quads, of which 968 of
+the highest subdivision level** — the ones carrying a collider.
 
 ## What a vertex costs
 
@@ -31,8 +33,9 @@ the same ground every time, which is what makes two runs comparable at all.
 
 | | |
 |---|---|
-| `stockNsPerVertex` | 283.0 |
-| `installedNsPerVertex` | 285.2 |
+| `stockNsPerVertex` | 284.7 |
+| `installedNsPerVertex` | 285.9 |
+| `differenceNsPerVertex` | +1.2 |
 | `differingQuads` | 0 / 30 |
 
 **A stock terrain vertex is placed in about 285 ns.** `PQS.BuildVertexSurfaceRelative` makes five trips
@@ -42,21 +45,32 @@ reads of `Component.transform`, since it runs once per vertex and reads `base.tr
 
 **With nothing installed, this run is the instrument measuring itself.** The two columns are the same
 code reached two different ways — `installed` through a delegate on the stock method, `stock` through
-the reverse-patched stub — so they have to agree. They are **2.2 ns apart, 0.8 %**, which is the floor
-of the method and of the same order as its reproducibility between two sessions. Any run of a terrain
-mod should be read knowing that 2.2 ns of what it reports is the measurement itself.
+the reverse-patched stub — so they have to agree. They are **1.2 ns apart, 0.4 %**, which is the floor
+of the method: any difference a terrain mod's run reports carries that much of the measurement itself.
+
+That floor is not the reproducibility of the instrument. **From one session of KSP to the next, on the
+same flight, the whole replay runs a little faster or slower**: the `stock` yardstick read 284.7 ns here,
+[290.3](https://github.com/lhervier/KSP-TerrainPrecisionFix-StockQuadCache/blob/main/perfs/README.md)
+and [288.0](https://github.com/lhervier/KSP-TerrainPrecisionFix/blob/main/perfs/README.md) in the two
+other runs of the same campaign, a 2 % spread, and the `installed` column moves with it. This is why a
+run is read through `differenceNsPerVertex`, installed against **its own** yardstick, and never through
+its `installedNsPerVertex` set against another run's: a difference taken within one session cancels
+the drift, one taken across two sessions adds it.
 
 ## In flight
 
+Every figure is a total over the samples of the `counters` run: frames over real seconds, build time
+over quads built, terrain update time over frames, and over real seconds for its share.
+
 | | |
 |---|---|
-| frames per second | 114.72 |
-| quads built per second | 16.56 |
-| of which of the highest level | 6.40 (39 %) |
-| ms per quad | 2.691 |
-| ms per quad of the highest level | 2.771 |
-| terrain per frame | 0.947 ms |
-| terrain share of real time | 10.86 % |
+| frames per second | 114.56 |
+| quads built per second | 16.49 |
+| of which of the highest level | 6.41 (39 %) |
+| ms per quad | 2.693 |
+| ms per quad of the highest level | 2.775 |
+| terrain per frame | 0.937 ms |
+| terrain share of real time | 10.74 % |
 
 **Building a quad costs about 2.8 ms**, some 12 µs per vertex, nearly all of it spent in the `PQSMod`s
 that compute height and colour. Placing the vertex — the 285 ns above — is **2.3 %** of that. It is

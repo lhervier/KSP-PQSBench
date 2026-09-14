@@ -8,7 +8,7 @@ namespace com.github.lhervier.ksp.pqsbench.bench.calibrate
 {
     /// <summary>
     /// What one terrain vertex costs: on a sample of quads, and in the frame that built them, whatever is
-    /// patching the vertex placement is timed against a copy of the stock one, on the same data. This is
+    /// patching the vertex placement is timed against the stock one, on the same data. This is
     /// the whole of what the calibrate mode measures, and nothing else runs alongside it.
     ///
     /// Nothing here knows which mod is installed, or whether one is at all. The quad is left exactly as it

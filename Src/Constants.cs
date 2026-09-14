@@ -50,8 +50,9 @@ namespace com.github.lhervier.ksp.pqsbench
         // The three things timed, all reached the same way and replayed by the same loop.
         //   installed - the stock method itself, so it runs through whatever Harmony patch is on it today,
         //               or straight to stock when there is none. Nothing here knows which;
-        //   stock     - a copy of the stock placement, which stays measurable in a run where the stock
-        //               method is patched. It is the yardstick two runs are compared through;
+        //   stock     - the stock placement, reached through a reverse patch of the stock method, so it
+        //               stays measurable in a run where that method is patched. It is the yardstick each
+        //               run is read against;
         //   harness   - places nothing. What is left is what the replay itself costs, the fields written
         //               before each call and the indirect call, which the two others also pay.
         internal const int FormulaHarness = 0;
