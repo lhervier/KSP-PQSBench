@@ -88,7 +88,7 @@ was found. The order rotates from quad to quad, so each runs as often first as l
 | | |
 |---|---|
 | `installed` | `PQS.BuildVertexSurfaceRelative` itself, so it runs through whatever Harmony patch is on it — or straight to stock when there is none. **The bench does not know, and does not need to know, which mod that is** |
-| `stock` | a copy of the stock placement, four lines long. It stays measurable in a run where the stock method is patched, and it is the yardstick two runs are compared through |
+| `stock` | the stock placement itself, reached through a Harmony reverse patch, which copies the original method's IL into a stub. It therefore stays measurable in a run where the stock method is patched, without being a transcription that could drift from the game — or be faster than it, which a transcription of those four lines is: stock keeps its intermediate values in fields of `PQS` and reads its inputs through a field, where a copy would use locals. It is the yardstick two runs are compared through |
 | `harness` | places nothing. What it measures is what the replay itself costs — the fields written before each call, and the indirect call — which the two others also pay, and which is subtracted from both |
 
 The dump gives `stockNsPerVertex` and `installedNsPerVertex` **net of the harness**, their difference,
@@ -121,6 +121,13 @@ The `BENCH begin` line names the Harmony ids patching `PQS.BuildVertexSurfaceRel
 `differingQuads` counts the calibrated quads where the installed placement put a vertex somewhere other
 than stock does, compared exactly. Zero means either that nothing is patching the placement, or that
 what is changes what it costs without changing the terrain.
+
+## What stock costs
+
+A reference run of a KSP with nothing patching the terrain is kept in [`perfs/`](perfs/), with its logs:
+what a quad costs to build, what a vertex costs to place, and what share of a frame the terrain takes,
+5 km over the Mun. It is also where this mod's own accuracy is checked, since with nothing installed the
+two calibrated figures are the same code reached two different ways.
 
 ## Measuring a terrain mod
 
