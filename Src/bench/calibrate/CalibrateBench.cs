@@ -71,7 +71,7 @@ namespace com.github.lhervier.ksp.pqsbench.bench.calibrate
         private void Bind()
         {
             _vertexIndexField = AccessTools.FieldRefAccess<PQS, int>("vertexIndex");
-            _replayScope = new ReplayScope(_vertexIndexField);
+            _replayScope = new ReplayScope();
 
             // AccessTools.Field returns null rather than throwing, which would only surface inside a quad
             // build.

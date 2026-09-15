@@ -34,14 +34,11 @@ namespace com.github.lhervier.ksp.pqsbench.bench.calibrate
         private int _vertIndex;
         private bool _isBuilt;
 
-        /// <summary>
-        /// Uses the given accessor to the vertex index of PQS, the same one the replay writes through. Throws
-        /// if the quad PQS is building cannot be reached.
-        /// </summary>
-        public ReplayScope(AccessTools.FieldRef<PQS, int> vertexIndexField)
+        /// <summary>Throws if the fields of PQS it saves cannot be reached.</summary>
+        public ReplayScope()
         {
             _buildQuadField = AccessTools.FieldRefAccess<PQS, PQ>("buildQuad");
-            _vertexIndexField = vertexIndexField;
+            _vertexIndexField = AccessTools.FieldRefAccess<PQS, int>("vertexIndex");
         }
 
         /// <summary>Whether a replay has begun and not ended yet.</summary>
