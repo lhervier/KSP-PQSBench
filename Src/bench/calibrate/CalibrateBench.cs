@@ -34,11 +34,10 @@ namespace com.github.lhervier.ksp.pqsbench.bench.calibrate
         // so that the quad build it re-enters is not taken for a quad the game built. Created by Subscribe.
         private ReplayScope _replayScope;
 
-        // The inputs every formula is replayed on. Allocated once, on the first calibrated quad. Kept here
-        // rather than in _replayScope: they are read inside the timed loop, where one more indirection per
-        // vertex would change what the harness formula measures.
-        private Vector3d[] _directions;
-        private double[] _heights;
+        // Allocated once, on the first calibrated quad. Kept here rather than in _replayScope, and a struct
+        // rather than a class, so that it lives inside this object: it is read inside the timed loop, where
+        // one more indirection per vertex would change what the harness formula measures.
+        private ReplayInputs _inputs;
 
         // State of PQS the replay has to set for every vertex, because the stock placement reads its
         // inputs from there rather than from the parameter it is handed.
@@ -246,10 +245,10 @@ namespace com.github.lhervier.ksp.pqsbench.bench.calibrate
         {
             // Grown only when a longer quad comes along, so that calibrating allocates nothing past the
             // first quad: a collection triggered here could land inside a timed round.
-            if (_directions == null || _directions.Length < count)
+            if (_inputs.Directions == null || _inputs.Directions.Length < count)
             {
-                _directions = new Vector3d[count];
-                _heights = new double[count];
+                _inputs.Directions = new Vector3d[count];
+                _inputs.Heights = new double[count];
             }
 
             // Outside the clock. PQS.verts holds each vertex as the build left it, which is the direction
@@ -259,8 +258,8 @@ namespace com.github.lhervier.ksp.pqsbench.bench.calibrate
             {
                 Vector3d vertex = verts[index];
                 double height = vertex.magnitude;
-                _heights[index] = height;
-                _directions[index] = height > 0.0 ? vertex / height : Vector3d.zero;
+                _inputs.Heights[index] = height;
+                _inputs.Directions[index] = height > 0.0 ? vertex / height : Vector3d.zero;
             }
         }
 
@@ -321,8 +320,8 @@ namespace com.github.lhervier.ksp.pqsbench.bench.calibrate
                 // formula, and what it costs is what the harness formula measures.
                 _vertexIndexField(sphere) = index;
                 data.vertIndex = index;
-                data.directionFromCenter = _directions[index];
-                data.vertHeight = _heights[index];
+                data.directionFromCenter = _inputs.Directions[index];
+                data.vertHeight = _inputs.Heights[index];
                 place(sphere, data);
             }
         }
