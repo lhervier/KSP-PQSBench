@@ -40,9 +40,21 @@ namespace com.github.lhervier.ksp.pqsbench
             _started = true;
         }
 
-        /// <summary>Writes which run this is, and how the terrain it flew over was set up.</summary>
+        /// <summary>
+        /// Writes the machine the run was taken on, which run this is, and how the terrain it flew over was
+        /// set up.
+        /// </summary>
         public static void Dump()
         {
+            // Written even when no run started: figures from two machines are never comparable, whatever
+            // else their logs agree on. The memory type is not in it, Unity does not expose it. The graphics
+            // device is, since a laptop can run KSP on either of its two and the frame rate follows.
+            Log.Info($"BENCH machine;cpu={UnityEngine.SystemInfo.processorType}"
+                + $";logicalCores={FormatUtils.I(UnityEngine.SystemInfo.processorCount)}"
+                + $";memoryMb={FormatUtils.I(UnityEngine.SystemInfo.systemMemorySize)}"
+                + $";gpu={UnityEngine.SystemInfo.graphicsDeviceName}"
+                + $";os={UnityEngine.SystemInfo.operatingSystem}");
+
             if (!_started)
             {
                 Log.Warning("BENCH run;the flight scene was never reached since the last reset:"

@@ -59,6 +59,9 @@ where:
 
 - `BENCH begin` — the mode, and the Harmony ids patching `PQS.BuildVertexSurfaceRelative` and
   `PQS.BuildQuad`. Read at dump time, since nothing says in which order mods install their patches.
+- `BENCH machine` — the processor, its logical cores, the memory size, the graphics device KSP runs on
+  and the operating system. Figures taken on two machines are not comparable, whatever else their logs
+  agree on. The memory type is not in it (Unity does not expose it): write it down with the results.
 - `BENCH run` — the save, the craft, the body it is flying over, the terrain detail preset, how many
   vertices a quad holds, and the stretch flown: `utStart`, `utEnd` and `utSpan` against `realSeconds`,
   with the altitude at both ends and the speed at the end. The run starts on the first frame in flight
