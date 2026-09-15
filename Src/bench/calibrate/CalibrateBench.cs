@@ -28,6 +28,9 @@ namespace com.github.lhervier.ksp.pqsbench.bench.calibrate
         // only be seen on a real quad and gives up on calibrating for the rest of the game.
         private bool _broken;
 
+        // Quads of the highest subdivision level the game built since the last reset, calibrated or not.
+        // Those the replay made it build are not counted. Picks which of them get calibrated: one in
+        // Constants.OneQuadIn, starting with the first.
         private int _topLevelQuadsSeen;
 
         // The replay under way, which leaves PQS as it found it. Active while a calibration is replaying,
@@ -217,19 +220,20 @@ namespace com.github.lhervier.ksp.pqsbench.bench.calibrate
                 for (int step = 0; step < Constants.FormulaCount; step++)
                 {
                     int formula = (_totals.Quads + step) % Constants.FormulaCount;
-                    if (!MeasureTicks(formula, sphere, data, quad, count, out long ticks))
-                    {
-                        // Nothing of this quad is kept: the formulas already timed on it would otherwise
-                        // be counted without its vertices.
-                        _broken = true;
-                        Log.Error("Re-entering PQS.BuildQuad rebuilt the quad instead of turning back, so a"
-                            + " formula cannot be handed a quad it has not seen: nothing more will be"
-                            + " calibrated.");
-                        return;
-                    }
-                    _totals.SetQuadTicks(formula, ticks);
+                    _totals.SetQuadTicks(
+                        formula, 
+                        MeasureTicks(formula, sphere, data, quad, count)
+                    );
                 }
                 _totals.CommitQuad(count);
+            }
+            catch (QuadRebuiltException)
+            {
+                // Nothing of this quad is kept: the formulas already timed on it would otherwise be counted
+                // without its vertices.
+                _broken = true;
+                Log.Error("Re-entering PQS.BuildQuad rebuilt the quad instead of turning back, so a formula"
+                    + " cannot be handed a quad it has not seen: nothing more will be calibrated.");
             }
             finally
             {
@@ -243,8 +247,8 @@ namespace com.github.lhervier.ksp.pqsbench.bench.calibrate
         /// </summary>
         private void ComputeInputs(int count)
         {
-            // Grown only when a longer quad comes along, so that calibrating allocates nothing past the
-            // first quad: a collection triggered here could land inside a timed round.
+            // Allocated on the first calibrated quad and reused after, so that calibrating allocates nothing
+            // more: a collection triggered here could land inside a timed round.
             if (_inputs.Directions == null || _inputs.Directions.Length < count)
             {
                 _inputs.Directions = new Vector3d[count];
@@ -265,48 +269,47 @@ namespace com.github.lhervier.ksp.pqsbench.bench.calibrate
 
         /// <summary>
         /// Replays one placement over every vertex of a quad, once per round, and gives the stopwatch ticks
-        /// spent in the replays alone. Returns false, stopping at that round, if re-entering PQS.BuildQuad
-        /// rebuilt the quad instead of turning back: the ticks given are then meaningless.
+        /// spent in the replays alone. Throws QuadRebuiltException, stopping at that round, if re-entering
+        /// PQS.BuildQuad rebuilt the quad instead of turning back.
         /// </summary>
-        private bool MeasureTicks(
-            int formula, 
-            PQS sphere, 
-            PQS.VertexBuildData data, 
-            PQ quad, 
-            int count,
-            out long ticks
+        private long MeasureTicks(
+            int formula,
+            PQS sphere,
+            PQS.VertexBuildData data,
+            PQ quad,
+            int count
         ) {
-            ticks = 0L;
+            long ticks = 0L;
             for (int round = 0; round < Constants.Rounds; round++)
             {
                 // Outside the clock, so that a round measures a placement facing a quad it has not seen —
                 // paying for it once over a couple of hundred vertices, as a real build does — without the
                 // signal that caused it being charged to anyone. Checked on every round rather than once
                 // per quad: whatever patches BuildQuad is not bound to answer the same way twice.
-                if (!InvalidateQuadCaches(sphere, quad))
-                {
-                    return false;
-                }
+                InvalidateQuadCaches(sphere, quad);
                 long start = Stopwatch.GetTimestamp();
                 Run(formula, sphere, data, count);
                 ticks += Stopwatch.GetTimestamp() - start;
             }
-            return true;
+            return ticks;
         }
 
         /// <summary>
         /// Tells whatever patches the terrain that a build of this quad is starting, so that anything it
-        /// keeps per quad is worked out again on the next vertex. Returns whether the call came straight
-        /// back, which it must.
+        /// keeps per quad is worked out again on the next vertex. Throws QuadRebuiltException if the call
+        /// rebuilt the quad instead of coming straight back.
         /// </summary>
-        private static bool InvalidateQuadCaches(PQS sphere, PQ quad)
+        private static void InvalidateQuadCaches(PQS sphere, PQ quad)
         {
             // PQS.BuildQuad turns an already built quad away on its first line, before touching anything —
             // but the Harmony prefixes have run by then, and a quad build starting is the only signal a
             // mod's per-quad state can be expected to listen to. isBuilt is true from the caller's point of
             // view here: BuildQuad has just returned true and PQ.Build is about to set it.
             quad.isBuilt = true;
-            return !sphere.BuildQuad(quad);
+            if (sphere.BuildQuad(quad))
+            {
+                throw new QuadRebuiltException();
+            }
         }
 
         /// <summary>Replays one placement over every vertex of a quad, once.</summary>
