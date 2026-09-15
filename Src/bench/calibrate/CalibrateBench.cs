@@ -35,7 +35,7 @@ namespace com.github.lhervier.ksp.pqsbench.bench.calibrate
         private int _topLevelQuadsSeen;
 
         // The replay under way, which leaves PQS as it found it. Active while a calibration is replaying,
-        // so that the quad build it re-enters is not taken for a quad the game built. Created by Bind.
+        // so that the quad build it re-enters is not taken for a quad the game built. Created by Subscribe.
         private ReplayScope _replayScope;
 
         // The inputs every formula is replayed on. Allocated once, on the first calibrated quad. Kept here
@@ -60,16 +60,6 @@ namespace com.github.lhervier.ksp.pqsbench.bench.calibrate
         /// </summary>
         public void Subscribe()
         {
-            Bind();
-            BuildQuadPatch.Built += QuadBuilt;
-        }
-
-        /// <summary>
-        /// Binds what the replay needs: the stock vertex placement, and the fields of PQS it reads. Throws
-        /// if any of them cannot be reached, rather than measuring something else.
-        /// </summary>
-        private void Bind()
-        {
             _vertexIndexField = AccessTools.FieldRefAccess<PQS, int>("vertexIndex");
             _replayScope = new ReplayScope();
 
@@ -85,6 +75,9 @@ namespace com.github.lhervier.ksp.pqsbench.bench.calibrate
             _place[Constants.FormulaHarness] = HarnessPlacer;
             _place[Constants.FormulaStock] = BindStockPlacer(placement);
             _place[Constants.FormulaInstalled] = BindInstalledPlacer(placement);
+
+            // Last, so that nothing is listened to if anything above threw.
+            BuildQuadPatch.Built += QuadBuilt;
         }
 
         /// <summary>The game's vertex placement, PQS.BuildVertexSurfaceRelative. Throws if it is not there.</summary>
