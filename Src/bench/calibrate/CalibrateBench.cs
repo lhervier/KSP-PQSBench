@@ -2,7 +2,6 @@ using System;
 using System.Diagnostics;
 using System.Reflection;
 using HarmonyLib;
-using UnityEngine;
 
 namespace com.github.lhervier.ksp.pqsbench.bench.calibrate
 {
@@ -16,16 +15,16 @@ namespace com.github.lhervier.ksp.pqsbench.bench.calibrate
     /// </summary>
     internal sealed class CalibrateBench : IBench
     {
-        private static readonly double TicksToNanoseconds = 1e9 / Stopwatch.Frequency;
-
         /// <summary>Places one terrain vertex, the way PQS.BuildVertexSurfaceRelative is asked to.</summary>
         private delegate void VertexPlacer(PQS sphere, PQS.VertexBuildData data);
 
         // One per formula, indexed by Constants.FormulaHarness, FormulaStock and FormulaInstalled.
         private readonly VertexPlacer[] _place = new VertexPlacer[Constants.FormulaCount];
-        private readonly long[] _ticks = new long[Constants.FormulaCount];
 
-        // What each formula took on the quad being calibrated, only added to _ticks once every formula has
+        // What was timed over the whole run, whole quads only.
+        private readonly CalibrationTotals _totals = new CalibrationTotals();
+
+        // What each formula took on the quad being calibrated, only added to _totals once every formula has
         // been timed on it.
         private readonly long[] _quadTicks = new long[Constants.FormulaCount];
 
@@ -33,24 +32,20 @@ namespace com.github.lhervier.ksp.pqsbench.bench.calibrate
         // only be seen on a real quad and gives up on calibrating for the rest of the game.
         private bool _broken;
 
-        // Whether a calibration is replaying, so that the quad build it re-enters is not taken for a quad
-        // the game built.
-        private bool _replaying;
-
         private int _topLevelQuadsSeen;
-        private int _calibratedQuads;
-        private long _calibratedVertices;
 
-        // The quad as it was found, and the inputs every formula is replayed on. Allocated once, on the first
-        // calibrated quad.
-        private Vector3[] _savedQuadVerts;
-        private Vector3d[] _savedSphereVerts;
+        // The replay under way, which leaves PQS as it found it. Active while a calibration is replaying,
+        // so that the quad build it re-enters is not taken for a quad the game built. Created by Bind.
+        private ReplayScope _replayScope;
+
+        // The inputs every formula is replayed on. Allocated once, on the first calibrated quad. Kept here
+        // rather than in _replayScope: they are read inside the timed loop, where one more indirection per
+        // vertex would change what the harness formula measures.
         private Vector3d[] _directions;
         private double[] _heights;
 
         // State of PQS the replay has to set for every vertex, because the stock placement reads its
         // inputs from there rather than from the parameter it is handed.
-        private AccessTools.FieldRef<PQS, PQ> _buildQuadField;
         private AccessTools.FieldRef<PQS, int> _vertexIndexField;
         private FieldInfo _vbDataField;
 
@@ -75,8 +70,8 @@ namespace com.github.lhervier.ksp.pqsbench.bench.calibrate
         /// </summary>
         private void Bind()
         {
-            _buildQuadField = AccessTools.FieldRefAccess<PQS, PQ>("buildQuad");
             _vertexIndexField = AccessTools.FieldRefAccess<PQS, int>("vertexIndex");
+            _replayScope = new ReplayScope(_vertexIndexField);
 
             // AccessTools.Field returns null rather than throwing, which would only surface inside a quad
             // build.
@@ -181,7 +176,7 @@ namespace com.github.lhervier.ksp.pqsbench.bench.calibrate
         /// </summary>
         private void QuadBuilt(PQS sphere, PQ quad, long ticks, bool topLevel)
         {
-            if (!topLevel || _replaying)
+            if (!topLevel || _replayScope.IsActive)
             {
                 return;
             }
@@ -216,37 +211,12 @@ namespace com.github.lhervier.ksp.pqsbench.bench.calibrate
             {
                 return;
             }
-            EnsureBuffers(count);
 
-            // Everything the replay is about to write over. What the terrain ends up looking like, and the
-            // state the rest of the build reads next, must not depend on which formula ran last.
-            Array.Copy(quad.verts, _savedQuadVerts, count);
-            Array.Copy(PQS.verts, _savedSphereVerts, count);
-            PQ savedBuildQuad = _buildQuadField(sphere);
-            int savedVertexIndex = _vertexIndexField(sphere);
-            PQ savedDataQuad = data.buildQuad;
-            Vector3d savedDirection = data.directionFromCenter;
-            double savedHeight = data.vertHeight;
-            int savedVertIndex = data.vertIndex;
-            bool savedIsBuilt = quad.isBuilt;
+            // What the terrain ends up looking like, and the state the rest of the build reads next, must not
+            // depend on which formula ran last: everything the replay writes over is put back at the end.
+            _replayScope.Begin(sphere, quad, data, count);
+            ComputeInputs(count);
 
-            // What every formula is replayed on, worked out once and outside the clock. PQS.verts holds
-            // each vertex as the build left it, which is the direction from the centre of the body times
-            // the height along it: the two values a placement is handed.
-            for (int index = 0; index < count; index++)
-            {
-                Vector3d vertex = _savedSphereVerts[index];
-                double height = vertex.magnitude;
-                _heights[index] = height;
-                _directions[index] = height > 0.0 ? vertex / height : Vector3d.zero;
-            }
-
-            // The state a real build is in when it hands a vertex over. BuildQuad clears buildQuad on its
-            // way out, so it has to be put back for the replay.
-            _buildQuadField(sphere) = quad;
-            data.buildQuad = quad;
-
-            _replaying = true;
             try
             {
                 // One untimed round of stock. It warms the two arrays, which the rest of the build has
@@ -258,7 +228,7 @@ namespace com.github.lhervier.ksp.pqsbench.bench.calibrate
                 // one.
                 for (int step = 0; step < Constants.FormulaCount; step++)
                 {
-                    int formula = (_calibratedQuads + step) % Constants.FormulaCount;
+                    int formula = (_totals.Quads + step) % Constants.FormulaCount;
                     if (!MeasureTicks(formula, sphere, data, quad, count, out _quadTicks[formula]))
                     {
                         // Nothing of this quad is kept: the formulas already timed on it would otherwise
@@ -270,38 +240,38 @@ namespace com.github.lhervier.ksp.pqsbench.bench.calibrate
                         return;
                     }
                 }
-                for (int formula = 0; formula < Constants.FormulaCount; formula++)
-                {
-                    _ticks[formula] += _quadTicks[formula];
-                }
-                _calibratedQuads++;
-                _calibratedVertices += (long)count * Constants.Rounds;
+                _totals.AddQuad(_quadTicks, count);
             }
             finally
             {
-                _replaying = false;
-                Array.Copy(_savedQuadVerts, quad.verts, count);
-                Array.Copy(_savedSphereVerts, PQS.verts, count);
-                _buildQuadField(sphere) = savedBuildQuad;
-                _vertexIndexField(sphere) = savedVertexIndex;
-                data.buildQuad = savedDataQuad;
-                data.directionFromCenter = savedDirection;
-                data.vertHeight = savedHeight;
-                data.vertIndex = savedVertIndex;
-                quad.isBuilt = savedIsBuilt;
+                _replayScope.End();
             }
         }
 
-        private void EnsureBuffers(int count)
+        /// <summary>
+        /// Works out what every formula is replayed on, from the first count vertices of PQS.verts as the
+        /// build left them. Must run before anything is replayed.
+        /// </summary>
+        private void ComputeInputs(int count)
         {
-            if (_savedQuadVerts != null && _savedQuadVerts.Length >= count)
+            // Grown only when a longer quad comes along, so that calibrating allocates nothing past the
+            // first quad: a collection triggered here could land inside a timed round.
+            if (_directions == null || _directions.Length < count)
             {
-                return;
+                _directions = new Vector3d[count];
+                _heights = new double[count];
             }
-            _savedQuadVerts = new Vector3[count];
-            _savedSphereVerts = new Vector3d[count];
-            _directions = new Vector3d[count];
-            _heights = new double[count];
+
+            // Outside the clock. PQS.verts holds each vertex as the build left it, which is the direction
+            // from the centre of the body times the height along it: the two values a placement is handed.
+            Vector3d[] verts = PQS.verts;
+            for (int index = 0; index < count; index++)
+            {
+                Vector3d vertex = verts[index];
+                double height = vertex.magnitude;
+                _heights[index] = height;
+                _directions[index] = height > 0.0 ? vertex / height : Vector3d.zero;
+            }
         }
 
         /// <summary>
@@ -374,27 +344,9 @@ namespace com.github.lhervier.ksp.pqsbench.bench.calibrate
         /// <summary>Writes what was timed, or why nothing was, as semicolon separated values.</summary>
         public void Dump()
         {
-            if (_calibratedVertices > 0)
+            if (!_totals.IsEmpty)
             {
-                // Each variable is named after the column it is written to.
-                double harnessNsPerVertex = _ticks[Constants.FormulaHarness] * TicksToNanoseconds / _calibratedVertices;
-                double stockRawNsPerVertex = _ticks[Constants.FormulaStock] * TicksToNanoseconds / _calibratedVertices;
-                double installedRawNsPerVertex = _ticks[Constants.FormulaInstalled] * TicksToNanoseconds / _calibratedVertices;
-
-                // The two figures to read are the net ones: what a placement costs on its own, the replay's
-                // own cost taken off both. The raw ones are there so that the subtraction can be checked.
-                double stockNsPerVertex = stockRawNsPerVertex - harnessNsPerVertex;
-                double installedNsPerVertex = installedRawNsPerVertex - harnessNsPerVertex;
-                double differenceNsPerVertex = installedRawNsPerVertex - stockRawNsPerVertex;
-
-                Log.Info($"BENCH calibration;quads={_calibratedQuads}"
-                    + $";roundsPerQuad={Constants.Rounds};verticesPerFormula={_calibratedVertices}"
-                    + $";stockNsPerVertex={FormatUtils.F(stockNsPerVertex, 1)}"
-                    + $";installedNsPerVertex={FormatUtils.F(installedNsPerVertex, 1)}"
-                    + $";differenceNsPerVertex={FormatUtils.F(differenceNsPerVertex, 1)}"
-                    + $";harnessNsPerVertex={FormatUtils.F(harnessNsPerVertex, 1)}"
-                    + $";stockRawNsPerVertex={FormatUtils.F(stockRawNsPerVertex, 1)}"
-                    + $";installedRawNsPerVertex={FormatUtils.F(installedRawNsPerVertex, 1)}");
+                _totals.Write();
             }
             else
             {
@@ -416,10 +368,8 @@ namespace com.github.lhervier.ksp.pqsbench.bench.calibrate
         /// <summary>Throws away everything timed, to start another run without restarting KSP.</summary>
         public void Reset()
         {
-            Array.Clear(_ticks, 0, _ticks.Length);
+            _totals.Clear();
             _topLevelQuadsSeen = 0;
-            _calibratedQuads = 0;
-            _calibratedVertices = 0L;
         }
     }
 }

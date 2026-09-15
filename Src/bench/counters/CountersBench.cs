@@ -12,8 +12,8 @@ namespace com.github.lhervier.ksp.pqsbench.bench.counters
     /// </summary>
     internal sealed class CountersBench : IBench
     {
-        private readonly Sample[] _samples = new Sample[Constants.MaxSamples];
-        private int _sampleCount;
+        // The samples closed over the whole run.
+        private readonly SampleSeries _series = new SampleSeries();
 
         // Whether recording has stopped for the rest of the run, the samples closed before it being kept.
         private bool _stopped;
@@ -135,13 +135,13 @@ namespace com.github.lhervier.ksp.pqsbench.bench.counters
 
         private void Close()
         {
-            if (_sampleCount >= Constants.MaxSamples)
+            if (_series.IsFull)
             {
                 Stop(Constants.MaxSamples + " samples recorded, no more room: dump them (Alt+F8) and"
                     + " start again (Alt+F7)");
                 return;
             }
-            _samples[_sampleCount++] = _current;
+            _series.Add(_current);
         }
 
         // ======================================================
@@ -201,40 +201,7 @@ namespace com.github.lhervier.ksp.pqsbench.bench.counters
         /// <summary>Writes one line per sample recorded, as semicolon separated values.</summary>
         public void Dump()
         {
-            Log.Info($"BENCH counters;samples={FormatUtils.I(_sampleCount)}");
-            Log.Info("BENCH;sample;ut;utSpan;realSeconds;frames;fps;altitude;speed;quads;topLevelQuads"
-                + ";vertices;buildMs;topLevelBuildMs;updateMs;subdivisionAvg;subdivisionMax;speedLevelCap;maxLevel");
-            for (int i = 0; i < _sampleCount; i++)
-            {
-                Sample s = _samples[i];
-                double buildMs = s.BuildTicks * 1000.0 / Stopwatch.Frequency;
-                double topLevelBuildMs = s.TopLevelBuildTicks * 1000.0 / Stopwatch.Frequency;
-                double updateMs = s.UpdateTicks * 1000.0 / Stopwatch.Frequency;
-                double fps = s.RealSeconds > 0.0 ? s.Frames / s.RealSeconds : 0.0;
-                double subdivisionAvg = s.Quads > 0 ? s.SubdivisionSum / (double)s.Quads : 0.0;
-                Log.Info(string.Join(";", new[]
-                {
-                    "BENCH",
-                    FormatUtils.I(i),
-                    FormatUtils.F(s.Ut, 2), 
-                    FormatUtils.F(s.UtSpan, 3), 
-                    FormatUtils.F(s.RealSeconds, 3),
-                    FormatUtils.I(s.Frames), 
-                    FormatUtils.F(fps, 1),
-                    FormatUtils.F(s.Altitude, 1), 
-                    FormatUtils.F(s.Speed, 1),
-                    FormatUtils.I(s.Quads), 
-                    FormatUtils.I(s.TopLevelQuads), 
-                    FormatUtils.L(s.Vertices),
-                    FormatUtils.F(buildMs, 3), 
-                    FormatUtils.F(topLevelBuildMs, 3), 
-                    FormatUtils.F(updateMs, 3),
-                    FormatUtils.F(subdivisionAvg, 2), 
-                    FormatUtils.I(s.SubdivisionMax),
-                    FormatUtils.I(s.SpeedLevelCap == int.MaxValue ? -1 : s.SpeedLevelCap), 
-                    FormatUtils.I(s.MaxLevel)
-                }));
-            }
+            _series.Write();
         }
 
         // ======================================================
@@ -245,7 +212,7 @@ namespace com.github.lhervier.ksp.pqsbench.bench.counters
         /// <summary>Throws away everything recorded, to start another run without restarting KSP.</summary>
         public void Reset()
         {
-            _sampleCount = 0;
+            _series.Clear();
             _stopped = false;
             _open = false;
         }
