@@ -169,6 +169,21 @@ the runs comparable is that each of them carries its own `stock` yardstick, meas
 as the thing under test: read `installedNsPerVertex` against the `stockNsPerVertex` of **its own run**,
 not against another machine's.
 
+### The game and the machine
+
+Set once, before the first run, and left alone until the last one:
+
+- **Vertical sync off** (in KSP's `settings.cfg`: `SYNC_VBL = 0`). With it on, the frame rate is capped
+  at the screen's refresh rate: `fps` and the terrain's share of real time in `counters` would measure
+  the screen rather than the game. For the same reason, no frame limit either (`FRAMERATE_LIMIT`; the
+  campaign of 2026-09-15 ran with `-1`, KSP's own value on that install).
+- **The same terrain detail preset** in every run. It decides how far the sphere subdivides, and the
+  `BENCH run` line gives it.
+- **The machine in the same state**: on mains power and at maximum performance for a laptop, nothing
+  heavy running alongside, and KSP forced onto one graphics device when there are two. The
+  `BENCH machine` line gives the processor and the graphics device; write the memory type down with the
+  results, the log cannot.
+
 ### The craft
 
 1. A new craft carrying **a command pod and nothing else**. Any craft works; one part keeps it obvious.
