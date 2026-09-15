@@ -24,10 +24,6 @@ namespace com.github.lhervier.ksp.pqsbench.bench.calibrate
         // What was timed over the whole run, whole quads only.
         private readonly CalibrationTotals _totals = new CalibrationTotals();
 
-        // What each formula took on the quad being calibrated, only added to _totals once every formula has
-        // been timed on it.
-        private readonly long[] _quadTicks = new long[Constants.FormulaCount];
-
         // Whether re-entering PQS.BuildQuad was found to rebuild the quad instead of turning back, which can
         // only be seen on a real quad and gives up on calibrating for the rest of the game.
         private bool _broken;
@@ -222,7 +218,7 @@ namespace com.github.lhervier.ksp.pqsbench.bench.calibrate
                 for (int step = 0; step < Constants.FormulaCount; step++)
                 {
                     int formula = (_totals.Quads + step) % Constants.FormulaCount;
-                    if (!MeasureTicks(formula, sphere, data, quad, count, out _quadTicks[formula]))
+                    if (!MeasureTicks(formula, sphere, data, quad, count, out long ticks))
                     {
                         // Nothing of this quad is kept: the formulas already timed on it would otherwise
                         // be counted without its vertices.
@@ -232,8 +228,9 @@ namespace com.github.lhervier.ksp.pqsbench.bench.calibrate
                             + " calibrated.");
                         return;
                     }
+                    _totals.SetQuadTicks(formula, ticks);
                 }
-                _totals.AddQuad(_quadTicks, count);
+                _totals.CommitQuad(count);
             }
             finally
             {

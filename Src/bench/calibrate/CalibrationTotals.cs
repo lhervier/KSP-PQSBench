@@ -16,6 +16,9 @@ namespace com.github.lhervier.ksp.pqsbench.bench.calibrate
         private int _quads;
         private long _vertices;
 
+        // What each formula took on the quad being timed, not counted until CommitQuad.
+        private readonly long[] _quadTicks = new long[Constants.FormulaCount];
+
         /// <summary>How many quads were added since the last Clear.</summary>
         public int Quads => _quads;
 
@@ -23,14 +26,23 @@ namespace com.github.lhervier.ksp.pqsbench.bench.calibrate
         public bool IsEmpty => _vertices == 0L;
 
         /// <summary>
-        /// Adds one quad on which every formula was timed, Constants.Rounds times over its vertexCount
-        /// vertices. quadTicks gives the stopwatch ticks of each formula, indexed like the formulas.
+        /// Records the stopwatch ticks one formula took on the quad being timed. Counts nothing until
+        /// CommitQuad.
         /// </summary>
-        public void AddQuad(long[] quadTicks, int vertexCount)
+        public void SetQuadTicks(int formula, long ticks)
+        {
+            _quadTicks[formula] = ticks;
+        }
+
+        /// <summary>
+        /// Adds the quad being timed, on which every formula was timed Constants.Rounds times over its
+        /// vertexCount vertices, with the ticks given to SetQuadTicks.
+        /// </summary>
+        public void CommitQuad(int vertexCount)
         {
             for (int formula = 0; formula < Constants.FormulaCount; formula++)
             {
-                _ticks[formula] += quadTicks[formula];
+                _ticks[formula] += _quadTicks[formula];
             }
             _quads++;
             _vertices += (long)vertexCount * Constants.Rounds;
