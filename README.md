@@ -297,9 +297,12 @@ Each run is a fresh KSP — `settings.cfg` is only read at startup, and so is `G
 between two runs**, KSP overwrites it at every start.
 
 1. Load the save.
-2. Look at the mission time in flight, and pick a round value a little ahead of it: 30 s, for instance.
-3. When it reads that value, **Alt+F7**. The scene load is then out of the recording.
-4. A set time later, 2 min 30 s for instance, at ×1 all along, **Alt+F8**.
+2. Turn the camera so that part of the ground is in view, the same way in every run, and leave it there.
+   The game does not place the camera the same way at every load, and what it shows changes what a frame
+   costs to draw: with a different view, `fps`, and the terrain per frame with it, would measure the view.
+3. Look at the mission time in flight, and pick a round value a little ahead of it: 30 s, for instance.
+4. When it reads that value, **Alt+F7**. The scene load is then out of the recording.
+5. A set time later, 2 min 30 s for instance, at ×1 all along, **Alt+F8**.
 
 **These two marks, the same in every run, are what makes the flights reproducible and comparable.** The
 craft is on rails: starting and stopping at the same mission time means flying over the same stretch of
