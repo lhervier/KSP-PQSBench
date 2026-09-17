@@ -14,8 +14,10 @@ It has two ways of measuring, and one run uses only one of them:
   installed against a run without it.
 
 It was written to check what [Terrain Precision Fix](https://github.com/lhervier/KSP-TerrainPrecisionFix)
-costs, but it knows nothing about that mod, or any other. Everything it hooks into is stock `PQS`, and it
-finds out what is patching the terrain by asking Harmony.
+costs, and it now measures other mods as well, such as
+[Stock Quad Cache](https://github.com/lhervier/KSP-TerrainPrecisionFix-StockQuadCache). It knows nothing
+about any of them: everything it hooks into is stock `PQS`, and it finds out what is patching the terrain
+by asking Harmony.
 
 **How this was made.** Written with Claude, Anthropic's AI assistant. Everything in it was reviewed and
 validated by a human — me — who very much enjoyed learning along the way how KSP builds its terrain
