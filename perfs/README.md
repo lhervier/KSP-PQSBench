@@ -9,7 +9,7 @@ fly, and what makes a run worth keeping. What follows is what it produced.
 
 ## The run
 
-2026-09-15, KSP 1.12.5. `GameData` holding Harmony, ModuleManager, KSP Community Fixes and this
+KSP 1.12.5. `GameData` holding Harmony, ModuleManager, KSP Community Fixes and this
 measuring mod — **nothing patching the terrain**. A command pod on rails in a circular orbit 5 km over
 the Mun, flown for 150 seconds of game time. The save is kept next to this page:
 [`ref-mune-5km.sfs`](ref-mune-5km.sfs).
@@ -66,8 +66,8 @@ of the method: any difference a terrain mod's run reports carries that much of t
 
 That floor is not the reproducibility of the instrument. **From one session of KSP to the next, on the
 same flight, the whole replay runs a little faster or slower**: the `stock` yardstick read 229.6 ns here,
-[232.3](https://github.com/lhervier/KSP-TerrainPrecisionFix-StockQuadCache/blob/main/perfs/README.md)
-and [228.5](https://github.com/lhervier/KSP-TerrainPrecisionFix/blob/main/perfs/README.md) in the two
+[232.3](https://github.com/lhervier/KSP-TerrainPrecisionFix-StockQuadCache/blob/master/perfs/README.md)
+and [228.5](https://github.com/lhervier/KSP-TerrainPrecisionFix/blob/master/perfs/README.md) in the two
 other runs of the same campaign, a 1.7 % spread, and the `installed` column moves with it. This is why a
 run is read through `differenceNsPerVertex`, installed against **its own** yardstick, and never through
 its `installedNsPerVertex` set against another run's: a difference taken within one session cancels
