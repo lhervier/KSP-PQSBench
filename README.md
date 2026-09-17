@@ -22,7 +22,7 @@ validated by a human — me — who very much enjoyed learning along the way how
 quads. It is still a measuring instrument: a figure it produces is only worth the code that produced it,
 so read that code before you trust the figure.
 
-## How it works
+## How the bench works
 
 ### Three hooks
 
@@ -30,12 +30,12 @@ Everything the two modes measure comes from three places:
 
 | hook | when | what it gives |
 |---|---|---|
-| **a quad is built** | a Harmony prefix and postfix on `PQS.BuildQuad`, the loop over the vertices of one quad | the sphere, the quad, how long the build took, and whether the quad is of the highest subdivision level. Raised only for a quad actually built, never for a call that built nothing |
-| **a sphere updates its terrain** | a Harmony prefix and postfix on `PQS.UpdateQuads`, which each terrain sphere runs once per frame | how long that update took: the subdivision decisions, the quad builds they lead to, and the normals. The update works within a time budget of its own, and what does not fit is left for a later frame |
+| **a quad is built** | a Harmony prefix and postfix on `PQS.BuildQuad`: the loop over the vertices of one quad, then the `PQSMod`s told the quad is built (`OnQuadBuilt`), which is where the terrain scatter is given its quad | the sphere, the quad, how long the build took, and whether the quad is of the highest subdivision level. Raised only for a quad actually built, never for a call that built nothing |
+| **a sphere updates its terrain** | a Harmony prefix and postfix on `PQS.UpdateQuads`, which each terrain sphere runs once per frame | how long that update took: the subdivision decisions, the quad builds and collapses they lead to (a collapsed quad releases its scatter), and the normals. The update works within a time budget of its own, and what does not fit is left for a later frame |
 | **a frame** | the mod's own `Update` | nothing but the frame itself |
 
 A quad **of the highest subdivision level** is one the game detaches into `LocalSpacePQStorage`: those
-carry the collider a craft stands on.
+carry the collider a craft stands on, and the terrain scatter.
 
 Both patches are installed in both measuring modes, whether the mode listens to them or not. A patch no
 one listens to reads the clock twice per call and records nothing.
@@ -196,7 +196,7 @@ A `BENCH counters` line gives how many samples were kept, then one line per samp
 | `quads`, `vertices` | terrain quads actually built during that second |
 | `topLevelQuads` | of which quads of the highest subdivision level |
 | `buildMs`, `topLevelBuildMs` | what `PQS.BuildQuad` spent on them |
-| `updateMs` | what the terrain updates of the spheres cost that second: the quad builds, plus the subdivision decisions and the normals. This is what the frames paid |
+| `updateMs` | what the terrain updates of the spheres cost that second: the quad builds, plus the subdivision decisions, the collapses and the normals. This is what the frames paid |
 | `subdivisionAvg`, `subdivisionMax` | the levels those quads were at |
 | `speedLevelCap`, `maxLevel` | the ceiling the game put on subdivision, and the sphere's own maximum |
 
@@ -235,7 +235,9 @@ and taking it out is the only honest reference: a mod left in place with its cor
 still pays for its own patches on the path being timed.
 
 One run measures one configuration in one mode, since both `GameData` and `settings.cfg` are read once
-at startup: a configuration takes two runs, one `counters` and one `calibrate`.
+at startup: a configuration takes two runs, one `counters` and one `calibrate`. `calibrate` only replays
+the vertex placement: for a mod that does not patch `PQS.BuildVertexSurfaceRelative`, it has nothing to
+tell, and `counters` alone is the measurement.
 
 ### The game and the machine
 
