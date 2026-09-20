@@ -1,5 +1,7 @@
 # PQS Bench
 
+**⚠️ Work in progress.** This is an active investigation, not a finished mod. The figures, the code and the conclusions on this page can still change, and several questions are still open.
+
 ## What it is for
 
 PQS Bench measures what building the KSP terrain costs, so that a mod patching it can be compared with
