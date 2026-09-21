@@ -1,22 +1,19 @@
 using System;
 using System.Collections.Generic;
-using System.IO;
 using System.Reflection;
-using com.github.lhervier.ksp.pqsbench.bench.calibrate;
-using com.github.lhervier.ksp.pqsbench.bench.counters;
 using HarmonyLib;
 using UnityEngine;
+using com.github.lhervier.ksp.pqsbench.events;
+using com.github.lhervier.ksp.pqsbench.utils;
 
 namespace com.github.lhervier.ksp.pqsbench
 {
     /// <summary>
-    /// Runs the measurement: reads what to measure, installs the terrain patches, lets the chosen mode
-    /// subscribe to what they raise, and listens for the keys that read the results back. Modifier (Alt)
-    /// + F8 dumps what has been recorded so far, Modifier + F7 throws it away.
+    /// Runs the measurement as soon as the mod is installed: installs the terrain patch, subscribes every
+    /// bench registered with it to what that patch raises, and listens for the keys that read the results
+    /// back. Modifier (Alt) + F8 dumps what has been recorded so far, Modifier + F7 throws it away.
     ///
-    /// The two modes never run together: a mode measures its own thing and nothing else, so that its log
-    /// holds no figure the mode itself has disturbed. What each of them measures lives in CountersBench and
-    /// CalibrateBench; nothing is measured here.
+    /// What is measured lives in the benches; nothing is measured here.
     /// </summary>
     [KSPAddon(KSPAddon.Startup.Instantly, true)]
     public class PQSBenchMod : MonoBehaviour
@@ -26,38 +23,70 @@ namespace com.github.lhervier.ksp.pqsbench
         private static readonly KeyBinding _dump = new KeyBinding(Constants.DumpKey);
         private static readonly KeyBinding _reset = new KeyBinding(Constants.ResetKey);
 
-        private static EBenchMode _mode = EBenchMode.Off;
+        // The benches registered before this addon started, waiting to be subscribed by Start.
+        private static readonly List<IBench> _registered = new List<IBench>();
 
-        // The mode measuring, or null when nothing is.
-        private static IBench _bench;
+        // The benches subscribed, the only ones dumped and reset.
+        private static readonly List<IBench> _benches = new List<IBench>();
+
+        // Whether Start has installed the terrain patch: from then on, a bench is subscribed as soon as it
+        // registers.
+        private static bool _started;
 
         /// <summary>Whether anything is being measured at all.</summary>
-        private static bool Recording { get { return _bench != null; } }
+        private static bool Recording { get { return _benches.Count > 0; } }
+
+        /// <summary>
+        /// Registers a bench and subscribes it to the terrain events: at once if this addon has started,
+        /// otherwise when it does. A bench that cannot subscribe records nothing, and says so in KSP.log.
+        /// </summary>
+        internal static void Register(IBench bench)
+        {
+            if (!_started)
+            {
+                _registered.Add(bench);
+                return;
+            }
+            Subscribe(bench);
+        }
+
+        /// <summary>Subscribes one bench, or says in KSP.log why it could not be.</summary>
+        private static void Subscribe(IBench bench)
+        {
+            try
+            {
+                bench.Subscribe();
+            }
+            catch (Exception e)
+            {
+                // A bench listens to nothing when its Subscribe throws, and the others go on without it.
+                Log.Error($"Could not install {bench.GetType().Name}, it will record nothing: {e}");
+                return;
+            }
+            _benches.Add(bench);
+        }
 
         private void Start()
         {
             Log.LoadLevel();
-            LoadSettings();
-            _bench = CreateBench(_mode);
-            if (!Recording)
-            {
-                Log.Info($"Version {typeof(PQSBenchMod).Assembly.GetName().Version} installed, measuring"
-                    + " nothing: set benchMode in PluginData/settings.cfg");
-                return;
-            }
             try
             {
-                // Every patch in both modes, whether the mode listens to it or not. One nobody listens to
-                // reads the clock twice per call and records nothing, outside anything calibrate times.
                 new Harmony(Constants.HarmonyId).PatchAll(typeof(PQSBenchMod).Assembly);
-                _bench.Subscribe();
+                BuildQuadPatch.Built += RunInfo.QuadBuilt;
             }
             catch (Exception e)
             {
                 Log.Error($"Could not install the measurement, nothing will be recorded: {e}");
-                _bench = null;
                 return;
             }
+            _started = true;
+
+            // The benches that registered before this addon started.
+            foreach (IBench bench in _registered)
+            {
+                Subscribe(bench);
+            }
+            _registered.Clear();
 
             // KSP instantiates a "once" addon a single time, but does not keep its GameObject across scene
             // loads: without this, the frame count and the keys would stop at the main menu.
@@ -72,7 +101,6 @@ namespace com.github.lhervier.ksp.pqsbench
                 return;
             }
             RunInfo.NoteFrame();
-            _bench.OnFrame();
             if (!GameSettings.MODIFIER_KEY.GetKey())
             {
                 return;
@@ -87,62 +115,12 @@ namespace com.github.lhervier.ksp.pqsbench
             }
         }
 
-        /// <summary>
-        /// Reads benchMode from PluginData/settings.cfg, next to the DLL. A missing file or an unknown
-        /// value measures nothing.
-        /// </summary>
-        private static void LoadSettings()
-        {
-            string folder = Path.GetDirectoryName(typeof(PQSBenchMod).Assembly.Location);
-            string path = Path.Combine(Path.Combine(folder, Constants.SettingsFolder), Constants.SettingsFile);
-            if (!File.Exists(path))
-            {
-                return;
-            }
-
-            ConfigNode node = ConfigNode.Load(path);
-            if (node == null)
-            {
-                return;
-            }
-
-            string mode = node.GetValue(Constants.BenchModeSetting);
-            if (string.IsNullOrEmpty(mode))
-            {
-                return;
-            }
-
-            EBenchMode parsed;
-            if (Enum.TryParse(mode, true, out parsed) && Enum.IsDefined(typeof(EBenchMode), parsed))
-            {
-                _mode = parsed;
-            }
-            else
-            {
-                Log.Warning("Unknown benchMode '" + mode + "' in " + path + ", measuring nothing");
-            }
-        }
-
-        /// <summary>The mode a benchMode stands for, or null for one that measures nothing.</summary>
-        private static IBench CreateBench(EBenchMode mode)
-        {
-            switch (mode)
-            {
-                case EBenchMode.Counters:
-                    return new CountersBench();
-                case EBenchMode.Calibrate:
-                    return new CalibrateBench();
-                default:
-                    return null;
-            }
-        }
-
         /// <summary>Announces what is being measured, once the patches are in.</summary>
         private static void Announce()
         {
             // How many vertices a quad holds is not said here: PQS.cacheVertCount is still 0 this early,
             // and only gets its value when the first terrain sphere starts up. The dump reports it.
-            Log.Info($"Measuring, benchMode {_mode}."
+            Log.Info($"Version {typeof(PQSBenchMod).Assembly.GetName().Version} installed, measuring."
                 + " Alt+F8 dumps what has been recorded, Alt+F7 throws it away.");
             if (Log.IsDebugEnabled)
             {
@@ -154,9 +132,12 @@ namespace com.github.lhervier.ksp.pqsbench
         /// <summary>Writes everything recorded so far to KSP.log, as semicolon separated lines.</summary>
         private static void Dump()
         {
-            Log.Info($"BENCH begin;mode={_mode};{DescribeInstalled()}");
+            Log.Info($"BENCH begin;{DescribeInstalled()}");
             RunInfo.Dump();
-            _bench.Dump();
+            foreach (IBench bench in _benches)
+            {
+                bench.Dump();
+            }
             Log.Info("BENCH end");
         }
 
@@ -191,7 +172,10 @@ namespace com.github.lhervier.ksp.pqsbench
         private static void Reset()
         {
             RunInfo.Reset();
-            _bench.Reset();
+            foreach (IBench bench in _benches)
+            {
+                bench.Reset();
+            }
             Log.Info("BENCH reset");
         }
     }

@@ -1,7 +1,7 @@
 using System.Diagnostics;
 using HarmonyLib;
 
-namespace com.github.lhervier.ksp.pqsbench
+namespace com.github.lhervier.ksp.pqsbench.events
 {
     /// <summary>Receives one terrain quad the game has just built.</summary>
     /// <param name="sphere">The terrain sphere that built it.</param>
@@ -13,10 +13,6 @@ namespace com.github.lhervier.ksp.pqsbench
     /// PQSMod_QuadMeshColliders.maxLevelOffset is 0, and the only ones Terrain Precision Fix corrects.
     /// </param>
     internal delegate void QuadBuiltHandler(PQS sphere, PQ quad, long ticks, bool topLevel);
-
-    /// <summary>Receives what one terrain update of one sphere cost, for one frame.</summary>
-    /// <param name="ticks">How long PQS.UpdateQuads took, in Stopwatch ticks.</param>
-    internal delegate void QuadsUpdatedHandler(long ticks);
 
     /// <summary>
     /// Times one terrain quad being built, and raises Built with it. PQS.BuildQuad is the loop over the
@@ -65,28 +61,6 @@ namespace com.github.lhervier.ksp.pqsbench
                 return false;
             }
             return quad.transform.parent == sphere.LocalSpacePQStorage.transform;
-        }
-    }
-
-    /// <summary>
-    /// Times the whole terrain update of one sphere for one frame, and raises Updated with it. That update
-    /// contains the quad builds above along with the subdivision decisions and the normals: this is what a
-    /// frame pays.
-    /// </summary>
-    [HarmonyPatch(typeof(PQS), "UpdateQuads")]
-    internal static class UpdateQuadsPatch
-    {
-        /// <summary>Raised once per terrain update of one sphere.</summary>
-        public static event QuadsUpdatedHandler Updated;
-
-        private static void Prefix(out long __state)
-        {
-            __state = Stopwatch.GetTimestamp();
-        }
-
-        private static void Postfix(long __state)
-        {
-            Updated?.Invoke(Stopwatch.GetTimestamp() - __state);
         }
     }
 }

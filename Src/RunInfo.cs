@@ -1,16 +1,18 @@
 using System;
 using System.Diagnostics;
 using System.Globalization;
+using com.github.lhervier.ksp.pqsbench.events;
+using com.github.lhervier.ksp.pqsbench.utils;
 
 namespace com.github.lhervier.ksp.pqsbench
 {
     /// <summary>
-    /// Which run a log is: the save and the craft it was flown on, the stretch of game time it covers, and
-    /// how the terrain was set up. Two runs that agree on all of it flew over the same ground, which is
-    /// what comparing their figures rests on.
+    /// Which run a log is: the save and the craft it was flown on, the stretch of game time it covers, how
+    /// many terrain quads the game built along it, and how the terrain was set up. Two runs that agree on
+    /// all of it flew over the same ground, which is what comparing their figures rests on.
     ///
-    /// Written the same way whatever is being measured, so that the two modes produce logs that can be
-    /// paired up.
+    /// Written the same way whatever is being measured, so that logs taken with and without a terrain mod
+    /// can be paired up.
     /// </summary>
     internal static class RunInfo
     {
@@ -18,10 +20,12 @@ namespace com.github.lhervier.ksp.pqsbench
         private static double _utStart;
         private static long _startTicks;
         private static double _altitudeStart;
+        private static int _quads;
+        private static int _topLevelQuads;
 
         /// <summary>
         /// Notes the run as having started, unless it already has. Called on every frame: a run starts on
-        /// the first one spent in flight since the last reset, whichever mode is measuring.
+        /// the first one spent in flight since the last reset.
         /// </summary>
         public static void NoteFrame()
         {
@@ -38,6 +42,25 @@ namespace com.github.lhervier.ksp.pqsbench
             _startTicks = Stopwatch.GetTimestamp();
             _altitudeStart = vessel.altitude;
             _started = true;
+        }
+
+        /// <summary>
+        /// Counts one terrain quad the game built, if a run has started and the game is in flight. Listens
+        /// to BuildQuadPatch.Built.
+        /// </summary>
+        public static void QuadBuilt(PQS sphere, PQ quad, long ticks, bool topLevel)
+        {
+            // Quads built in another scene are not part of the flight: the space centre and the tracking
+            // station build their own.
+            if (!_started || !HighLogic.LoadedSceneIsFlight)
+            {
+                return;
+            }
+            _quads++;
+            if (topLevel)
+            {
+                _topLevelQuads++;
+            }
         }
 
         /// <summary>
@@ -83,7 +106,8 @@ namespace com.github.lhervier.ksp.pqsbench
                 + $";realSeconds={FormatUtils.F(realSeconds, 2)}"
                 + $";altitudeStart={FormatUtils.F(_altitudeStart, 1)}"
                 + $";altitude={FormatUtils.F(vessel == null ? 0.0 : vessel.altitude, 1)}"
-                + $";speed={FormatUtils.F(vessel == null ? 0.0 : vessel.srfSpeed, 1)}");
+                + $";speed={FormatUtils.F(vessel == null ? 0.0 : vessel.srfSpeed, 1)}"
+                + $";quads={FormatUtils.I(_quads)};topLevelQuads={FormatUtils.I(_topLevelQuads)}");
 
             // Only the sphere the craft is flying over: it is the one whose quads were measured. A body
             // with an ocean has a second sphere, which builds quads too and is not described here.
@@ -138,6 +162,8 @@ namespace com.github.lhervier.ksp.pqsbench
         public static void Reset()
         {
             _started = false;
+            _quads = 0;
+            _topLevelQuads = 0;
         }
     }
 }

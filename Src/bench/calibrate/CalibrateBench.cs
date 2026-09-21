@@ -2,13 +2,15 @@ using System;
 using System.Diagnostics;
 using System.Reflection;
 using HarmonyLib;
+using com.github.lhervier.ksp.pqsbench.events;
+using com.github.lhervier.ksp.pqsbench.utils;
 
 namespace com.github.lhervier.ksp.pqsbench.bench.calibrate
 {
     /// <summary>
     /// What one terrain vertex costs: on a sample of quads, and in the frame that built them, whatever is
-    /// patching the vertex placement is timed against the stock one, on the same data. This is
-    /// the whole of what the calibrate mode measures, and nothing else runs alongside it.
+    /// patching the vertex placement is timed against the stock one, on the same data. Nothing else
+    /// runs alongside it.
     ///
     /// Nothing here knows which mod is installed, or whether one is at all. The quad is left exactly as it
     /// was found, so the terrain does not depend on anything measured here.
@@ -18,8 +20,8 @@ namespace com.github.lhervier.ksp.pqsbench.bench.calibrate
         /// <summary>Places one terrain vertex, the way PQS.BuildVertexSurfaceRelative is asked to.</summary>
         private delegate void VertexPlacer(PQS sphere, PQS.VertexBuildData data);
 
-        // One per formula, indexed by Constants.FormulaHarness, FormulaStock and FormulaInstalled.
-        private readonly VertexPlacer[] _place = new VertexPlacer[Constants.FormulaCount];
+        // One per formula, indexed by CalibrateConstants.FormulaHarness, FormulaStock and FormulaInstalled.
+        private readonly VertexPlacer[] _place = new VertexPlacer[CalibrateConstants.FormulaCount];
 
         // What was timed over the whole run, whole quads only.
         private readonly CalibrationTotals _totals = new CalibrationTotals();
@@ -30,7 +32,7 @@ namespace com.github.lhervier.ksp.pqsbench.bench.calibrate
 
         // Quads of the highest subdivision level the game built since the last reset, calibrated or not.
         // Those the replay made it build are not counted. Picks which of them get calibrated: one in
-        // Constants.OneQuadIn, starting with the first.
+        // CalibrateConstants.OneQuadIn, starting with the first.
         private int _topLevelQuadsSeen;
 
         // The replay under way, which leaves PQS as it found it. Active while a calibration is replaying,
@@ -52,9 +54,8 @@ namespace com.github.lhervier.ksp.pqsbench.bench.calibrate
         // ============================================================
 
         /// <summary>
-        /// Binds what the replay needs, then listens to every quad built. The terrain update of a frame is
-        /// not listened to. Throws, listening to nothing, if the stock vertex placement or the fields of PQS
-        /// it reads cannot be reached.
+        /// Binds what the replay needs, then listens to every quad built. Throws, listening to nothing, if
+        /// the stock vertex placement or the fields of PQS it reads cannot be reached.
         /// </summary>
         public void Subscribe()
         {
@@ -70,9 +71,9 @@ namespace com.github.lhervier.ksp.pqsbench.bench.calibrate
             }
 
             MethodInfo placement = FindPQSBuildVertexSurfaceRelativeMethod();
-            _place[Constants.FormulaHarness] = HarnessPlacer;
-            _place[Constants.FormulaStock] = BindStockPlacer(placement);
-            _place[Constants.FormulaInstalled] = BindInstalledPlacer(placement);
+            _place[CalibrateConstants.FormulaHarness] = HarnessPlacer;
+            _place[CalibrateConstants.FormulaStock] = BindStockPlacer(placement);
+            _place[CalibrateConstants.FormulaInstalled] = BindInstalledPlacer(placement);
 
             // Last, so that nothing is listened to if anything above threw.
             BuildQuadPatch.Built += QuadBuilt;
@@ -121,7 +122,7 @@ namespace com.github.lhervier.ksp.pqsbench.bench.calibrate
             // original method's IL into StockPlacer, so it reads the same fields in the same order,
             // whatever is patching the real method today. A hand-written copy cannot reach those fields as
             // cheaply and measured 8 % low.
-            new Harmony(Constants.HarmonyId)
+            new Harmony(CalibrateConstants.HarmonyId)
                 .CreateReversePatcher(
                     placement,
                     new HarmonyMethod(
@@ -148,15 +149,6 @@ namespace com.github.lhervier.ksp.pqsbench.bench.calibrate
         }
 
         // ============================================================
-        // OnFrame
-        // ============================================================
-        
-        /// <summary>Does nothing: the calibration only ever runs inside a quad build.</summary>
-        public void OnFrame()
-        {
-        }
-
-        // ============================================================
         // Quad built event
         // ============================================================
 
@@ -171,7 +163,7 @@ namespace com.github.lhervier.ksp.pqsbench.bench.calibrate
             {
                 return;
             }
-            if (_topLevelQuadsSeen % Constants.OneQuadIn == 0)
+            if (_topLevelQuadsSeen % CalibrateConstants.OneQuadIn == 0)
             {
                 Calibrate(sphere, quad);
             }
@@ -212,14 +204,14 @@ namespace com.github.lhervier.ksp.pqsbench.bench.calibrate
             {
                 // One untimed round of stock. It warms the two arrays, which the rest of the build has
                 // pushed out of cache, so that whichever formula runs first is not charged for it.
-                Run(Constants.FormulaStock, sphere, data, count);
+                Run(CalibrateConstants.FormulaStock, sphere, data, count);
 
                 // The order rotates from one calibrated quad to the next, so that each formula runs as
                 // often first as last and whatever is left of that effect does not always land on the same
                 // one.
-                for (int step = 0; step < Constants.FormulaCount; step++)
+                for (int step = 0; step < CalibrateConstants.FormulaCount; step++)
                 {
-                    int formula = (_totals.Quads + step) % Constants.FormulaCount;
+                    int formula = (_totals.Quads + step) % CalibrateConstants.FormulaCount;
                     _totals.SetQuadTicks(
                         formula, 
                         MeasureTicks(formula, sphere, data, quad, count)
@@ -280,7 +272,7 @@ namespace com.github.lhervier.ksp.pqsbench.bench.calibrate
             int count
         ) {
             long ticks = 0L;
-            for (int round = 0; round < Constants.Rounds; round++)
+            for (int round = 0; round < CalibrateConstants.Rounds; round++)
             {
                 // Outside the clock, so that a round measures a placement facing a quad it has not seen —
                 // paying for it once over a couple of hundred vertices, as a real build does — without the

@@ -1,6 +1,6 @@
 using System.Globalization;
 
-namespace com.github.lhervier.ksp.pqsbench
+namespace com.github.lhervier.ksp.pqsbench.utils
 {
     /// <summary>
     /// Writes the numbers of the dump. The log is read by a spreadsheet or a script, so they are written

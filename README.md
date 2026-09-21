@@ -7,13 +7,12 @@
 PQS Bench measures what building the KSP terrain costs, so that a mod patching it can be compared with
 stock. It corrects nothing and changes nothing about the game: it only counts.
 
-It has two ways of measuring, and one run uses only one of them:
+It times the vertex placement the game runs — whatever mod is patching it, or stock when none is —
+against the stock placement, on the same quads, in the same run. It measures as soon as it is installed:
+there is nothing to switch on, and nothing to switch off but taking its folder out of `GameData`.
 
-- **`calibrate`** times the vertex placement the game runs — whatever mod is patching it, or stock when
-  none is — against the stock placement, on the same quads, in the same run;
-- **`counters`** measures what the terrain costs in flight: how many quads are built, what they cost, and
-  what share of a frame that is. It compares nothing by itself: a mod is measured by a run with it
-  installed against a run without it.
+It does not time frames. What the terrain costs a whole frame is a question for a frame profiler such as
+[KSPProfiler](https://github.com/KSPModdingLibs/KSPProfiler), which times each phase of Unity's game loop.
 
 It was written to check what [Terrain Precision Fix](https://github.com/lhervier/KSP-TerrainPrecisionFix)
 costs, and it now measures other mods as well, such as
@@ -28,36 +27,23 @@ so read that code before you trust the figure.
 
 ## How the bench works
 
-### Three hooks
+### One hook
 
-Everything the two modes measure comes from three places:
+Everything the bench records comes from one event, **a quad is built**:
 
-| hook | when | what it gives |
-|---|---|---|
-| **a quad is built** | a Harmony prefix and postfix on `PQS.BuildQuad`: the loop over the vertices of one quad, then the `PQSMod`s told the quad is built (`OnQuadBuilt`), which is where the terrain scatter is given its quad | the sphere, the quad, how long the build took, and whether the quad is of the highest subdivision level. Raised only for a quad actually built, never for a call that built nothing |
-| **a sphere updates its terrain** | a Harmony prefix and postfix on `PQS.UpdateQuads`, which each terrain sphere runs once per frame | how long that update took: the subdivision decisions, the quad builds and collapses they lead to (a collapsed quad releases its scatter), and the normals. The update works within a time budget of its own, and what does not fit is left for a later frame |
-| **a frame** | the mod's own `Update` | nothing but the frame itself |
+| when | what it gives |
+|---|---|
+| a Harmony prefix and postfix on `PQS.BuildQuad`: the loop over the vertices of one quad, then the `PQSMod`s told the quad is built (`OnQuadBuilt`), which is where the terrain scatter is given its quad | the sphere, the quad, how long the build took, and whether the quad is of the highest subdivision level. Raised only for a quad actually built, never for a call that built nothing |
+
+The run itself starts on the first frame spent in flight after Alt+F7.
 
 A quad **of the highest subdivision level** is one the game detaches into `LocalSpacePQStorage`: those
 carry the collider a craft stands on, and the terrain scatter.
 
-Both patches are installed in both measuring modes, whether the mode listens to them or not. A patch no
-one listens to reads the clock twice per call and records nothing.
-
 ### Settings
 
 `GameData/PQSBenchMod/PluginData/settings.cfg`, read once when KSP starts. To change it: quit KSP, edit
-the file, start KSP again.
-
-| `benchMode` | what is recorded |
-|---|---|
-| `off` (default) | nothing. **No Harmony patch is applied at all**: the mod is inert, and leaving it installed costs nothing |
-| `calibrate` | what one terrain vertex costs, installed against stock |
-| `counters` | what the terrain costs in flight, one line per second of game time |
-
-**The two measuring modes are exclusive.** `calibrate` does real work inside the very frames `counters`
-times, so a run that did both would publish frame times it had itself inflated. The mode not chosen does
-not exist in the game at all.
+the file, start KSP again. It holds a single setting.
 
 `logLevel` takes `Error`, `Warning`, `Info` (default), `Debug` or `Trace`. **Leave it at `Info`**: the
 results are written at `Info`, so `Warning` or `Error` would silence them, and nothing in the mod writes
@@ -79,13 +65,12 @@ loading another save does not reset it, Alt+F7 does.
 Every line is prefixed with `[PQSBench]`, and every result is semicolon separated, for a spreadsheet or a
 script.
 
-**When KSP starts**, one line says what the mod will do: `measuring nothing` with `benchMode = off`, or
-the mode it measures and the two keys. It is followed by a warning when `logLevel` is above `Info`.
+**When KSP starts**, one line gives the version and the two keys. It is followed by a warning when
+`logLevel` is above `Info`.
 
-**On Alt+F8**, the dump opens the same way whatever the mode, so that a log says for itself what it
-measured and where:
+**On Alt+F8**, the dump opens with lines that let a log say for itself what it measured and where:
 
-- `BENCH begin` — the mode, and the Harmony ids patching `PQS.BuildVertexSurfaceRelative` and
+- `BENCH begin` — the Harmony ids patching `PQS.BuildVertexSurfaceRelative` and
   `PQS.BuildQuad`, or `none`. Read at dump time, since nothing says in which order mods install their
   patches.
 - `BENCH machine` — the processor, its logical cores, the memory size, the graphics device KSP runs on and
@@ -93,22 +78,44 @@ measured and where:
   on. The memory type is not in it (Unity does not expose it): write it down with the results.
 - `BENCH run` — the save, the craft, the body it is flying over, the terrain detail preset, how many
   vertices a quad holds, and the stretch flown: `utStart`, `utEnd` and `utSpan` against `realSeconds`,
-  with the altitude at both ends and the speed at the end. The run starts on the first frame in flight
-  after Alt+F7.
-- `BENCH sphere` and `BENCH colliders` — how the terrain of that body is set up, described under
-  [`counters`](#counters-what-the-terrain-costs-in-flight), which is where it matters.
+  with the altitude at both ends and the speed at the end. Then how many terrain quads the game built in
+  flight along the way, `quads`, of which `topLevelQuads` of the highest subdivision level. The run starts
+  on the first frame in flight after Alt+F7. The quad counts take in every sphere that builds quads: the
+  Mun has one, and on a body with an ocean the ocean's quads are counted too.
+- `BENCH sphere` and `BENCH colliders` — how the terrain of that body is set up, described
+  [below](#how-the-terrain-of-that-body-is-set-up).
 
-Then come the lines of the mode, described below, and the dump closes on `BENCH end`. **Alt+F7** writes
-`BENCH reset`.
+Then comes the `BENCH calibration` line, described below, and the dump closes on `BENCH end`.
+**Alt+F7** writes `BENCH reset`.
 
 **Two runs are comparable when their `BENCH run` lines agree.** Same save, same craft, same body, same
 stretch of game time at the same altitude means the same ground was flown over twice, which is what
 comparing their figures rests on. It is also where a run that warped shows up: `utSpan` far above
-`realSeconds`.
+`realSeconds`. `topLevelQuads` says whether the run built the quads it was meant to measure at all, and
+whether two runs built about as many.
 
-## `calibrate`: what is installed, against stock, on the same quads
+### How the terrain of that body is set up
 
-`calibrate` answers one question: what does placing **one terrain vertex** cost, and how much of that does
+The dump's `BENCH sphere` line says what decides how far the sphere subdivides, and a `BENCH colliders`
+line per `PQSMod_QuadMeshColliders` gives its `maxLevelOffset`. Only the sphere the craft is flying over
+is described. Read on Kerbin and the Mun, KSP 1.12.5:
+
+| sphere | minLevel | maxLevel | highest level appears under | lowest level with a collider | max angle per sample |
+|---|---|---|---|---|---|
+| Kerbin | 2 | 10 | 9 375 m | 10 | 4.60e-5 rad |
+| Mun | 2 | 9 | 6 250 m | 9 | 9.20e-5 rad |
+| KerbinOcean | 2 | 7 | 75 000 m | none | 3.68e-4 rad |
+
+**The highest level also depends on how fast the game runs.** `PQ.UpdateSubdivision` only splits a quad
+while `subdivision < sphereRoot.maxLevelAtCurrentTgtSpeed`, and that ceiling is worked out from how far
+the craft moves between two samples of real time: the faster it flies, or the slower the game runs, the
+lower it falls. `speedCapAt60Fps` is the ground speed above which it drops below `maxLevel` at 60 frames
+per second. A run whose frames are slow enough for long enough builds fewer quads of the highest level,
+which `topLevelQuads` shows.
+
+## What is installed, against stock, on the same quads
+
+The bench answers one question: what does placing **one terrain vertex** cost, and how much of that does
 the installed mod change?
 
 ### Why the placement is replayed
@@ -173,64 +180,6 @@ runs: that would add up the noise of two sessions, which is what the replay is t
 
 When nothing was calibrated, the line says `quads=0` and why.
 
-## `counters`: what the terrain costs in flight
-
-`counters` listens to all three hooks, and cuts the flight into samples of one second of game time:
-**a quad is built** and **a sphere updates its terrain** fill the sample in progress, **a frame** counts
-it and closes it once a second of game time has gone by.
-
-It counts every sphere that builds quads. The Mun has one; on a body with an ocean, the ocean's quads and
-updates are in the figures too.
-
-### What stops a run
-
-Time warp is outside the protocol: the craft crosses the ground far too fast for a sample to mean
-anything. So is leaving the flight scene, or losing the active craft, in the middle of a run. Any of these
-stops the recording for good, with a warning in `KSP.log`; the samples closed before it are still dumped.
-
-### What comes out
-
-A `BENCH counters` line gives how many samples were kept, then one line per sample:
-
-| column | |
-|---|---|
-| `ut`, `utSpan` | when the sample was taken, and how much game time it covers |
-| `realSeconds`, `frames`, `fps` | and how much real time that was |
-| `altitude`, `speed` | where the craft was at the end of it |
-| `quads`, `vertices` | terrain quads actually built during that second |
-| `topLevelQuads` | of which quads of the highest subdivision level |
-| `buildMs`, `topLevelBuildMs` | what `PQS.BuildQuad` spent on them |
-| `updateMs` | what the terrain updates of the spheres cost that second: the quad builds, plus the subdivision decisions, the collapses and the normals. This is what the frames paid |
-| `subdivisionAvg`, `subdivisionMax` | the levels those quads were at |
-| `speedLevelCap`, `maxLevel` | the ceiling the game put on subdivision, and the sphere's own maximum |
-
-**`speedLevelCap` is the column to watch.** `PQ.UpdateSubdivision` only splits a quad while
-`subdivision < sphereRoot.maxLevelAtCurrentTgtSpeed`, and that ceiling is worked out from how far the
-craft moves between two samples of real time: the faster it flies — or the slower the game runs — the
-lower it falls. A run where `speedLevelCap` sits below `maxLevel` never built the quads you were trying to
-measure. On a body with an ocean, these two columns mix both spheres.
-
-### How the terrain of that body is set up
-
-The dump's `BENCH sphere` line says what decides how far the sphere subdivides, and a `BENCH colliders`
-line per `PQSMod_QuadMeshColliders` gives its `maxLevelOffset`. Only the sphere the craft is flying over
-is described. Read on Kerbin and the Mun, KSP 1.12.5:
-
-| sphere | minLevel | maxLevel | highest level appears under | lowest level with a collider | max angle per sample |
-|---|---|---|---|---|---|
-| Kerbin | 2 | 10 | 9 375 m | 10 | 4.60e-5 rad |
-| Mun | 2 | 9 | 6 250 m | 9 | 9.20e-5 rad |
-| KerbinOcean | 2 | 7 | 75 000 m | none | 3.68e-4 rad |
-
-### What it cannot tell
-
-**`counters` gives an order of magnitude, not a gain.** Frame times and build times move from one session
-of KSP to the next, and a small difference between two `counters` runs — one with a mod, one without —
-has been seen to change sign from one series of runs to the next, and to disagree between build time per
-quad and terrain time per frame within the same series. What `counters` says reliably is how much of a frame
-the terrain takes, and whether a mod changes that by a lot. How much a mod changes the placement itself is
-`calibrate`'s question.
-
 ## Measuring a terrain mod
 
 The flight is on rails, so loading the same save twice covers the same ground twice. A run with the mod
@@ -238,18 +187,21 @@ being measured installed, against a run with its folder taken out of `GameData`,
 and taking it out is the only honest reference: a mod left in place with its correction switched off
 still pays for its own patches on the path being timed.
 
-One run measures one configuration in one mode, since both `GameData` and `settings.cfg` are read once
-at startup: a configuration takes two runs, one `counters` and one `calibrate`. `calibrate` only replays
+One run measures one configuration, since `GameData` is read once at startup. The bench only replays
 the vertex placement: for a mod that does not patch `PQS.BuildVertexSurfaceRelative`, it has nothing to
-tell, and `counters` alone is the measurement.
+tell, and a frame profiler is the measurement.
+
+**The bench does real work inside the frames it runs in**: never time frames — with a profiler or
+anything else — in a run where it is installed. Take its folder out of `GameData` for those.
 
 ### The game and the machine
 
 Set once, before the first run, and left alone until the last one:
 
-- **Vertical sync off** (in KSP's `settings.cfg`: `SYNC_VBL = 0`). With it on, the frame rate is capped
-  at the screen's refresh rate: `fps` and the terrain's share of real time in `counters` would measure
-  the screen rather than the game. For the same reason, no frame limit either (`FRAMERATE_LIMIT`).
+- **Vertical sync off** (in KSP's `settings.cfg`: `SYNC_VBL = 0`), and no frame limit
+  (`FRAMERATE_LIMIT`). With either, the frame rate follows the screen or the setting, and the frame rate
+  decides how far the terrain subdivides (see [above](#how-the-terrain-of-that-body-is-set-up)): the
+  quads built would depend on the screen rather than on the game.
 - **The same terrain detail preset** in every run. It decides how far the sphere subdivides, and the
   `BENCH run` line gives it.
 - **The machine in the same state**: on mains power and at maximum performance for a laptop, nothing
@@ -301,7 +253,8 @@ between two runs**, KSP overwrites it at every start.
 1. Load the save.
 2. Turn the camera so that part of the ground is in view, the same way in every run, and leave it there.
    The game does not place the camera the same way at every load, and what it shows changes what a frame
-   costs to draw: with a different view, `fps`, and the terrain per frame with it, would measure the view.
+   costs to draw: with a different view, the frame rate, and with it how far the terrain subdivides,
+   would follow the view.
 3. Look at the mission time in flight, and pick a round value a little ahead of it: 30 s, for instance.
 4. When it reads that value, **Alt+F7**. The scene load is then out of the recording.
 5. A set time later, 2 min 30 s for instance, at ×1 all along, **Alt+F8**.
@@ -311,27 +264,24 @@ craft is on rails: starting and stopping at the same mission time means flying o
 ground, and building the same quads. The `utStart` and `utSpan` of the `BENCH run` lines are there to
 check it.
 
-A `counters` run is worth keeping when `topLevelQuads` is above zero and `speedLevelCap` sits at
-`maxLevel`; a `calibrate` run, when `quads` is above zero. In both, the `BENCH run` and `BENCH begin`
-lines are what says the run was the one you meant to fly, with the mods you meant to have installed.
+A run is worth keeping when the `quads` of its `BENCH calibration` line is above zero. Its `BENCH run`
+and `BENCH begin` lines are what says it was the run you meant to fly, with the mods you meant to have
+installed.
 
 ## What stock costs
 
-Two runs of KSP 1.12.5 with nothing patching the terrain, one per mode, flown from the provided save by
-the procedure above. **Taken on my laptop**: Intel Core Ultra 7 155H, 32 GB of DDR5, KSP on the
-integrated Intel Arc graphics, Windows 11. Figures from another machine are not comparable to these.
+Two runs of KSP 1.12.5 with nothing patching the terrain, flown from the provided save by the procedure
+above. **Taken on my desktop**: Intel Core i7-4790K, 32 GB of DDR3, NVIDIA GeForce GTX 1060, Windows 10.
+Figures from another machine are not comparable to these.
 
-| | stock |
-|---|---|
-| placing a vertex (`stockNsPerVertex`) | 229.6 ns |
-| `differenceNsPerVertex`, with nothing installed | −1.1 ns |
-| building a quad of the highest level | 1.716 ms |
-| terrain per frame | 1.195 ms |
-| terrain share of real time | 9.21 % |
-| frames per second | 77.04 |
+| | run 1 | run 2 |
+|---|---|---|
+| placing a vertex (`stockNsPerVertex`) | 284.2 ns | 284.7 ns |
+| `differenceNsPerVertex`, with nothing installed | −2.5 ns | +3.4 ns |
 
 With nothing installed, the two calibrated placements are the same code reached two different ways:
-their difference is the floor of the method, what any run carries of the measurement itself.
+their difference is the floor of the method, what any run carries of the measurement itself — about
+3 ns on this machine, one way or the other.
 
 The logs, the machine in full, and how each figure is read out of them are in [`perfs/`](perfs/).
 
@@ -339,8 +289,9 @@ The logs, the machine in full, and how each figure is read out of them are in [`
 
 Requires KSP 1.12 and [HarmonyKSP](https://github.com/KSPModdingLibs/HarmonyKSP).
 
-Copy `GameData/PQSBenchMod` into the `GameData` of KSP. Nothing is written to your saves. It ships with
-`benchMode = off`, which applies no patch at all (see [Settings](#settings)).
+Copy `GameData/PQSBenchMod` into the `GameData` of KSP. Nothing is written to your saves. **It measures
+as soon as it is installed**, and its replay costs time in the frames that build terrain: take it out of
+`GameData` when you are not measuring.
 
 ## Build
 
