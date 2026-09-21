@@ -1,11 +1,8 @@
-# What the stock terrain costs
+# What the stock terrain costs: the runs
 
-Reference runs of stock KSP, with no mod touching the terrain at all: what placing a terrain vertex
-costs. They are the yardstick any measurement of a terrain mod is read against, and they are here because
-they say nothing about any mod — only about the game.
-
-The procedure that produced them is on [this mod's page](../README.md): the craft, the orbit, how long to
-fly, and what makes a run worth keeping. What follows is what it produced.
+The logs of the reference runs of stock KSP, with no mod touching the terrain at all. The figures
+themselves, and what they say, are in [What stock costs](../README.md#what-stock-costs); the procedure
+that produced them is on [the same page](../README.md#measuring-a-terrain-mod).
 
 ## The runs
 
@@ -40,43 +37,20 @@ configuration had all its runs at the same moment of the session.
 | [`mun-05km-stock-calibrate-2.log`](runs/mun-05km-stock-calibrate-2.log) | UT 54.70 | 70.00 s | 70.13 s | 704 |
 
 The figures come from their `BENCH run` lines. Game time against real time says there was no warp, and
-the same number of quads of the highest level says the two flights built the same ground.
+the same number of quads of the highest level says the two flights built the same ground. Their result
+lines, as logged:
 
-## What a vertex costs
+```
+BENCH calibration;quads=22;roundsPerQuad=8;verticesPerFormula=39600;stockNsPerVertex=284.2;installedNsPerVertex=281.7;differenceNsPerVertex=-2.5;harnessNsPerVertex=5.7;stockRawNsPerVertex=289.9;installedRawNsPerVertex=287.4
+BENCH calibration;quads=22;roundsPerQuad=8;verticesPerFormula=39600;stockNsPerVertex=284.7;installedNsPerVertex=288.2;differenceNsPerVertex=3.4;harnessNsPerVertex=5.9;stockRawNsPerVertex=290.7;installedRawNsPerVertex=294.1
+```
 
-22 quads calibrated per run, 39 600 vertices per formula:
-
-| | run 1 | run 2 |
-|---|---|---|
-| `stockNsPerVertex` | 284.2 | 284.7 |
-| `installedNsPerVertex` | 281.7 | 288.2 |
-| `differenceNsPerVertex` | −2.5 | +3.4 |
-| `harnessNsPerVertex` | 5.7 | 5.9 |
-
-**A stock terrain vertex is placed in about 285 ns.** `PQS.BuildVertexSurfaceRelative` makes five trips
-into the native engine for it: `Transform.TransformPoint`, `Transform.InverseTransformPoint`, and two
-reads of `Component.transform`, since it runs once per vertex and reads `base.transform` and
-`buildQuad.transform` each time.
-
-**With nothing installed, these runs are the instrument measuring itself.** The two columns are the same
-code reached two different ways — `installed` through a delegate on the stock method, `stock` through
-the reverse-patched stub — so they have to agree. They are 2.5 ns apart one way, then 3.4 ns the other:
-**about 3 ns, 1 %, is the floor of the method**, and the change of sign says it is noise rather than a
-bias. Any difference a terrain mod's run reports carries that much of the measurement itself.
-
-That floor is not the reproducibility of the instrument. **From one session of KSP to the next, on the
-same flight, the whole replay runs a little faster or slower**: over the six runs of the campaign, the
-`stock` yardstick read between 282.7 and 297.5 ns, a 5 % spread, and the `installed` column moves with
-it. This is why a run is read through `differenceNsPerVertex`, installed against **its own** yardstick,
-and never through its `installedNsPerVertex` set against another run's: a difference taken within one
-session cancels the drift, one taken across two sessions adds it.
-
-## Measurements read against this one
+## Runs read against these
 
 - [Stock Quad Cache](https://github.com/lhervier/KSP-TerrainPrecisionFix-StockQuadCache/blob/master/perfs/README.md),
   stock's arithmetic with the two `Transform`s read once per quad.
 - [Terrain Precision Fix](https://github.com/lhervier/KSP-TerrainPrecisionFix/blob/master/perfs/README.md),
   which replaces the arithmetic as well.
 
-Each of them keeps its own runs and its own reading of them; all were taken on this same save, in the
-same session of runs, on this machine.
+Each of them keeps its own runs; all were taken on this same save, in the same session of runs, on this
+machine.
