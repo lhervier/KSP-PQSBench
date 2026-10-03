@@ -35,7 +35,7 @@ Everything the bench records comes from one event, **a quad is built**:
 |---|---|
 | a Harmony prefix and postfix on `PQS.BuildQuad`: the loop over the vertices of one quad, then the `PQSMod`s told the quad is built (`OnQuadBuilt`), which is where the terrain scatter is given its quad | the sphere, the quad, how long the build took, and whether the quad is of the highest subdivision level. Raised only for a quad actually built, never for a call that built nothing |
 
-The run itself starts on the first frame spent in flight after Alt+F7.
+The run itself starts on the first frame spent in flight after *Reset*.
 
 A quad **of the highest subdivision level** is one the game detaches into `LocalSpacePQStorage`: those
 carry the collider a craft stands on, and the terrain scatter.
@@ -49,26 +49,26 @@ the file, start KSP again. It holds a single setting.
 results are written at `Info`, so `Warning` or `Error` would silence them, and nothing in the mod writes
 above `Info`.
 
-### Keys
+### The window
 
-In flight:
+In flight, a small window holds two buttons:
 
-- **Alt+F8** writes everything recorded so far to `KSP.log`.
-- **Alt+F7** throws it away and starts again.
+- **Dump to KSP.log** writes everything recorded so far to `KSP.log`.
+- **Reset** throws it away and starts again.
 
-Alt stands for KSP's modifier key, whatever it is set to. Nothing is written until you ask for it: writing
-while measuring would cost more than what is being measured. The recording lives as long as the game:
-loading another save does not reset it, Alt+F7 does.
+`Alt+F6` shows or hides the window; Alt stands for KSP's modifier key, whatever it is set to. Nothing is
+written until you ask for it: writing while measuring would cost more than what is being measured. The
+recording lives as long as the game: loading another save does not reset it, *Reset* does.
 
 ### What goes to `KSP.log`
 
 Every line is prefixed with `[PQSBench]`, and every result is semicolon separated, for a spreadsheet or a
 script.
 
-**When KSP starts**, one line gives the version and the two keys. It is followed by a warning when
+**When KSP starts**, one line gives the version and the two buttons. It is followed by a warning when
 `logLevel` is above `Info`.
 
-**On Alt+F8**, the dump opens with lines that let a log say for itself what it measured and where:
+**On *Dump to KSP.log***, the dump opens with lines that let a log say for itself what it measured and where:
 
 - `BENCH begin` — the Harmony ids patching `PQS.BuildVertexSurfaceRelative` and
   `PQS.BuildQuad`, or `none`. Read at dump time, since nothing says in which order mods install their
@@ -80,13 +80,13 @@ script.
   vertices a quad holds, and the stretch flown: `utStart`, `utEnd` and `utSpan` against `realSeconds`,
   with the altitude at both ends and the speed at the end. Then how many terrain quads the game built in
   flight along the way, `quads`, of which `topLevelQuads` of the highest subdivision level. The run starts
-  on the first frame in flight after Alt+F7. The quad counts take in every sphere that builds quads: the
+  on the first frame in flight after *Reset*. The quad counts take in every sphere that builds quads: the
   Mun has one, and on a body with an ocean the ocean's quads are counted too.
 - `BENCH sphere` and `BENCH colliders` — how the terrain of that body is set up, described
   [below](#how-the-terrain-of-that-body-is-set-up).
 
 Then comes the `BENCH calibration` line, described below, and the dump closes on `BENCH end`.
-**Alt+F7** writes `BENCH reset`.
+***Reset*** writes `BENCH reset`.
 
 **Two runs are comparable when their `BENCH run` lines agree.** Same save, same craft, same body, same
 stretch of game time at the same altitude means the same ground was flown over twice, which is what
@@ -165,7 +165,7 @@ turning it away, the calibration stops for the rest of the game and says so in `
 
 ### What comes out
 
-One `BENCH calibration` line, over the quads calibrated since the last Alt+F7:
+One `BENCH calibration` line, over the quads calibrated since the last *Reset*:
 
 | column | |
 |---|---|
@@ -252,12 +252,14 @@ between two runs**, KSP overwrites it at every start.
 
 1. Load the save.
 2. Turn the camera so that part of the ground is in view, the same way in every run, and leave it there.
+   Right after the load, the camera does not show the Mun at all. Turn it to look ahead along the orbit,
+   prograde, until the capsule sits between two large craters, plainly in view.
    The game does not place the camera the same way at every load, and what it shows changes what a frame
    costs to draw: with a different view, the frame rate, and with it how far the terrain subdivides,
    would follow the view.
 3. Look at the mission time in flight, and pick a round value a little ahead of it: 30 s, for instance.
-4. When it reads that value, **Alt+F7**. The scene load is then out of the recording.
-5. A set time later, 2 min 30 s for instance, at ×1 all along, **Alt+F8**.
+4. When it reads that value, **Reset**. The scene load is then out of the recording.
+5. A set time later, 2 min 30 s for instance, at ×1 all along, **Dump to KSP.log**.
 
 **These two marks, the same in every run, are what makes the flights reproducible and comparable.** The
 craft is on rails: starting and stopping at the same mission time means flying over the same stretch of

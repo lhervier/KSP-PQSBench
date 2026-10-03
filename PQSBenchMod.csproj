@@ -29,9 +29,23 @@
       <HintPath>$(KSPDIR)\KSP_x64_Data\Managed\UnityEngine.CoreModule.dll</HintPath>
       <Private>false</Private>
     </Reference>
+    <Reference Include="UnityEngine.IMGUIModule">
+      <HintPath>$(KSPDIR)\KSP_x64_Data\Managed\UnityEngine.IMGUIModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.TextRenderingModule">
+      <HintPath>$(KSPDIR)\KSP_x64_Data\Managed\UnityEngine.TextRenderingModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
     <!-- Not part of KSP: HarmonyKSP, the usual GameData\000_Harmony. -->
     <Reference Include="0Harmony">
       <HintPath>$(KSPDIR)\GameData\000_Harmony\0Harmony.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <!-- KSP-MCPServer, for the attribute that marks the tools this mod offers it. Only the server reads
+         it: without the server installed, this mod runs the same. -->
+    <Reference Include="KSPMCPServer">
+      <HintPath>$(KSPDIR)\GameData\KSPMCPServer\KSPMCPServer.dll</HintPath>
       <Private>false</Private>
     </Reference>
   </ItemGroup>

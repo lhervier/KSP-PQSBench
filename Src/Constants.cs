@@ -2,7 +2,7 @@ using UnityEngine;
 
 namespace com.github.lhervier.ksp.pqsbench
 {
-    /// <summary>Every constant of the host: the mod, its settings, its log and its keys.</summary>
+    /// <summary>Every constant of the host: the mod, its settings, its log and its window.</summary>
     internal static class Constants
     {
         // ---- The mod ----
@@ -20,9 +20,16 @@ namespace com.github.lhervier.ksp.pqsbench
 
         internal const string LogPrefix = "[PQSBench] ";
 
-        // ---- Keys, pressed along with the modifier (Alt) ----
+        // ---- The window ----
 
-        internal const KeyCode DumpKey = KeyCode.F8;
-        internal const KeyCode ResetKey = KeyCode.F7;
+        // Pressed along with the modifier (Alt), shows or hides the window: the same key for every KSP Diag.
+        internal const KeyCode WindowKey = KeyCode.F6;
+
+        // Unique among the windows of the game.
+        internal const int WindowId = 0x47485007;
+
+        internal const float WindowX = 60f;
+        internal const float WindowY = 60f;
+        internal const float WindowWidth = 300f;
     }
 }

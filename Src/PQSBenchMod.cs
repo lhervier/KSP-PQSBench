@@ -10,8 +10,9 @@ namespace com.github.lhervier.ksp.pqsbench
 {
     /// <summary>
     /// Runs the measurement as soon as the mod is installed: installs the terrain patch, subscribes every
-    /// bench registered with it to what that patch raises, and listens for the keys that read the results
-    /// back. Modifier (Alt) + F8 dumps what has been recorded so far, Modifier + F7 throws it away.
+    /// bench registered with it to what that patch raises, and shows in flight a small window whose buttons
+    /// read the results back: Dump writes what has been recorded so far, Reset throws it away. Modifier (Alt)
+    /// + F6 shows or hides the window.
     ///
     /// What is measured lives in the benches; nothing is measured here.
     /// </summary>
@@ -20,8 +21,10 @@ namespace com.github.lhervier.ksp.pqsbench
     {
         // Read through KSP's own key bindings rather than UnityEngine.Input, which lives in a module this
         // mod does not reference.
-        private static readonly KeyBinding _dump = new KeyBinding(Constants.DumpKey);
-        private static readonly KeyBinding _reset = new KeyBinding(Constants.ResetKey);
+        private static readonly KeyBinding _window = new KeyBinding(Constants.WindowKey);
+
+        private static bool _visible = true;
+        private static Rect _windowRect = new Rect(Constants.WindowX, Constants.WindowY, Constants.WindowWidth, 0f);
 
         // The benches registered before this addon started, waiting to be subscribed by Start.
         private static readonly List<IBench> _registered = new List<IBench>();
@@ -101,18 +104,42 @@ namespace com.github.lhervier.ksp.pqsbench
                 return;
             }
             RunInfo.NoteFrame();
-            if (!GameSettings.MODIFIER_KEY.GetKey())
+            if (GameSettings.MODIFIER_KEY.GetKey() && _window.GetKeyDown())
+            {
+                _visible = !_visible;
+            }
+        }
+
+        private void OnGUI()
+        {
+            if (!_visible || !Recording || !HighLogic.LoadedSceneIsFlight)
             {
                 return;
             }
-            if (_dump.GetKeyDown())
+            GUI.skin = HighLogic.Skin;
+            _windowRect = GUILayout.Window(Constants.WindowId, _windowRect, DrawWindow, "PQS Bench");
+        }
+
+        private void DrawWindow(int id)
+        {
+            GUILayout.BeginVertical();
+            if (GUILayout.Button("Dump to KSP.log"))
             {
                 Dump();
             }
-            else if (_reset.GetKeyDown())
+            if (GUILayout.Button("Reset"))
             {
                 Reset();
             }
+            GUILayout.EndVertical();
+            GUI.DragWindow();
+        }
+
+        /// <summary>Where the window is on the screen, and how big.</summary>
+        internal static Rect WindowRect
+        {
+            get { return _windowRect; }
+            set { _windowRect = value; }
         }
 
         /// <summary>Announces what is being measured, once the patches are in.</summary>
@@ -121,7 +148,8 @@ namespace com.github.lhervier.ksp.pqsbench
             // How many vertices a quad holds is not said here: PQS.cacheVertCount is still 0 this early,
             // and only gets its value when the first terrain sphere starts up. The dump reports it.
             Log.Info($"Version {typeof(PQSBenchMod).Assembly.GetName().Version} installed, measuring."
-                + " Alt+F8 dumps what has been recorded, Alt+F7 throws it away.");
+                + " The window's Dump writes what has been recorded, Reset throws it away; Alt+F6 shows or hides"
+                + " the window.");
             if (Log.IsDebugEnabled)
             {
                 Log.Warning("logLevel is above Info, which writes to KSP.log on the very path being"
@@ -130,7 +158,7 @@ namespace com.github.lhervier.ksp.pqsbench
         }
 
         /// <summary>Writes everything recorded so far to KSP.log, as semicolon separated lines.</summary>
-        private static void Dump()
+        internal static void Dump()
         {
             Log.Info($"BENCH begin;{DescribeInstalled()}");
             RunInfo.Dump();
@@ -169,7 +197,7 @@ namespace com.github.lhervier.ksp.pqsbench
         }
 
         /// <summary>Throws away everything recorded, to start another run without restarting KSP.</summary>
-        private static void Reset()
+        internal static void Reset()
         {
             RunInfo.Reset();
             foreach (IBench bench in _benches)
