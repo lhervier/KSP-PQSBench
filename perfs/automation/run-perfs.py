@@ -118,8 +118,9 @@ def bring_to_front(title):
     rect = Rect()
     user32.GetWindowRect(window, ctypes.byref(rect))
     width, height = user32.GetSystemMetrics(0), user32.GetSystemMetrics(1)
-    # The first corner of the screen outside the window.
-    for x, y in ((width - 1, height - 1), (0, height - 1), (width - 1, 0), (0, 0)):
+    # The middle of the first edge of the screen outside the window, never a corner: the bottom right one is
+    # Windows' "show desktop" button, whose hover makes every window transparent.
+    for x, y in ((2, height // 2), (width - 3, height // 2), (width // 2, 2)):
         if not (rect.left <= x < rect.right and rect.top <= y < rect.bottom):
             user32.SetCursorPos(x, y)
             break
