@@ -42,5 +42,14 @@ namespace com.github.lhervier.ksp.pqsbench
                 { "height", (double)rect.height }
             };
         }
+
+        [McpTool("pqsbench_show_window",
+            "Shows or hides the window of PQS Bench, as Mod+F6 does; what it measures goes on either " +
+            "way. It only shows in flight, while recording. Returns whether it shows (visible).")]
+        internal static object ShowWindow(bool visible)
+        {
+            PQSBenchMod.WindowVisible = visible;
+            return new Dictionary<string, object> { { "visible", PQSBenchMod.WindowVisible } };
+        }
     }
 }

@@ -24,6 +24,14 @@ namespace com.github.lhervier.ksp.pqsbench
         private static readonly KeyBinding _window = new KeyBinding(Constants.WindowKey);
 
         private static bool _visible = true;
+
+        /// <summary>Whether the window shows, as Mod+F6 toggles it; the measures go on either way.</summary>
+        internal static bool WindowVisible
+        {
+            get { return _visible; }
+            set { _visible = value; }
+        }
+
         private static Rect _windowRect = new Rect(Constants.WindowX, Constants.WindowY, Constants.WindowWidth, 0f);
 
         // The benches registered before this addon started, waiting to be subscribed by Start.
