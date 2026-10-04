@@ -14,9 +14,10 @@ its window hidden; with KSPProfiler, its window open as a player has it, Start c
 capture, then Export to CSV. Nothing is asked of KSP between the start and the stop of the measure: the script
 sleeps through it, for the game time left converted at the pace the game kept before the start.
 
-On Windows it also does what a player does with the game's window: brings it in front of every other window
-without giving it the keyboard, and moves the mouse pointer off it. A window left behind others, or the
-profiler's window moved elsewhere, changes what a frame costs (both were measured).
+On Windows it also does what a player does with the game's window: brings it in front of every other window,
+the keyboard with it, and moves the mouse pointer off it (full screen, to the middle of its left edge); it stops
+if the window is not in front, and checks again at the start and at the stop of the measure. Play the runs full
+screen (FULLSCREEN = True in settings.cfg), and do not use the computer during a run.
 
 It writes run.json (the mission time at both ends, the frames captured, the pace) and, with KSPProfiler,
 profiler.csv into --out, then quits KSP (unless --keep-running is given). With PQS Bench, the figures are in
@@ -98,19 +99,31 @@ def launch_time(path):
     return vessels[active]
 
 
-def bring_to_front(title):
-    """Puts the window of that title in front of every other window, without giving it the keyboard, and moves
-    the mouse pointer off it. Returns whether the window was found; does nothing but on Windows."""
+def in_front(title):
+    """Whether the window of that title is the foreground window; None but on Windows."""
     if sys.platform != "win32":
-        return False
+        return None
+    user32 = ctypes.windll.user32
+    window = user32.FindWindowW(None, title)
+    return bool(window) and user32.GetForegroundWindow() == window
+
+
+def bring_to_front(title):
+    """Makes the window of that title the foreground window, in front of every other one and with the keyboard,
+    and moves the mouse pointer off it. Returns whether it is in front; None but on Windows."""
+    if sys.platform != "win32":
+        return None
     user32 = ctypes.windll.user32
     window = user32.FindWindowW(None, title)
     if not window:
         return False
-    # Made topmost then not: that brings it to the top of the others without activating it.
-    flags = 0x0001 | 0x0002 | 0x0010 | 0x0040  # SWP_NOSIZE, SWP_NOMOVE, SWP_NOACTIVATE, SWP_SHOWWINDOW
-    user32.SetWindowPos(window, -1, 0, 0, 0, 0, flags)  # HWND_TOPMOST
-    user32.SetWindowPos(window, -2, 0, 0, 0, 0, flags)  # HWND_NOTOPMOST
+    # Windows lets a program take the foreground only in some cases, one of them right after a key press:
+    # Alt pressed and released, then the window asked for. Raising it without the keyboard is not enough,
+    # Windows leaves it behind the window in use.
+    user32.keybd_event(0x12, 0, 0, 0)  # VK_MENU down
+    user32.keybd_event(0x12, 0, 2, 0)  # VK_MENU up
+    user32.SetForegroundWindow(window)
+    time.sleep(0.5)
 
     class Rect(ctypes.Structure):
         _fields_ = [("left", ctypes.c_long), ("top", ctypes.c_long), ("right", ctypes.c_long),
@@ -119,12 +132,15 @@ def bring_to_front(title):
     user32.GetWindowRect(window, ctypes.byref(rect))
     width, height = user32.GetSystemMetrics(0), user32.GetSystemMetrics(1)
     # The middle of the first edge of the screen outside the window, never a corner: the bottom right one is
-    # Windows' "show desktop" button, whose hover makes every window transparent.
+    # Windows' "show desktop" button, whose hover makes every window transparent. Full screen, the middle of
+    # its left edge, over the sky or the ground, away from the craft.
     for x, y in ((2, height // 2), (width - 3, height // 2), (width // 2, 2)):
         if not (rect.left <= x < rect.right and rect.top <= y < rect.bottom):
             user32.SetCursorPos(x, y)
             break
-    return True
+    else:
+        user32.SetCursorPos(2, height // 2)
+    return in_front(title)
 
 
 def log(*parts):
@@ -174,8 +190,10 @@ def main():
         if options.profiler_window:
             log("profiler window:", call("profiler_move_window", x=options.profiler_window[0],
                                          y=options.profiler_window[1]))
-    in_front = False if options.leave_behind else bring_to_front(options.window_title)
-    log("KSP's window brought in front:", in_front)
+    front = None if options.leave_behind else bring_to_front(options.window_title)
+    log("KSP's window in front:", front)
+    if front is False:
+        raise SystemExit("error: KSP's window could not be brought in front of the others")
 
     # Up to the start, the game is read as often as needed; the pace of game time against real time it kept
     # meanwhile converts what is left of the measure into a sleep.
@@ -183,6 +201,7 @@ def main():
     while True:
         real, ut = time.time(), call("get_state")["ut"]
         if ut - launched >= options.start - 0.05:
+            front_at_start = in_front(options.window_title)
             break
         time.sleep(0.05)
     pace = (ut - first_ut) / (real - first_real)
@@ -200,11 +219,13 @@ def main():
     else:
         call("profiler_stop_capture")
     stopped_real = time.time()
+    front_at_stop = in_front(options.window_title)
     stopped = call("get_state")["ut"] - launched
     result = {"instrument": measuring, "save": options.save, "launchTime": launched,
               "missionTimeStart": round(started, 3), "missionTimeStop": round(stopped, 3),
               "gameSeconds": round(stopped - started, 3), "realSeconds": round(stopped_real - started_real, 3),
-              "paceBefore": round(pace, 4), "camera": camera, "windowInFront": in_front,
+              "paceBefore": round(pace, 4), "camera": camera, "windowInFront": front,
+              "windowInFrontAtStart": front_at_start, "windowInFrontAtStop": front_at_stop,
               "profilerWindow": options.profiler_window}
     if measuring == "profiler":
         state = call("profiler_state")
