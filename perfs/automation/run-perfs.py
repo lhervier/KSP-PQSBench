@@ -7,11 +7,11 @@ a sandbox game, wait for the main menu, then run:
 
     python run-perfs.py --folder <your sandbox game> --out out
 
-It does what the runs of the README ask a player to do, in the same order: load the save, turn the camera
-(looking ahead along the orbit, the Mun's ground on the left two thirds of the screen), then at 30 s of mission
-time start the measure, and at 1 min 40 s stop it. With PQS Bench, Reset then Dump to KSP.log, its window
-hidden; with KSPProfiler, its window open as a player has it, Start capture of 10 000 frames, Stop capture,
-then Export to CSV. Nothing is asked of KSP between the start and the stop of the measure: the script
+It does what the runs of docs/measuring-a-terrain-mod.md ask a player to do, in the same order: load the save,
+turn the camera (looking ahead along the orbit, the Mun's ground on the left two thirds of the screen), then at
+30 s of mission time start the measure, and at 1 min 40 s stop it. With PQS Bench, Reset then Dump to KSP.log,
+its window hidden; with KSPProfiler, its window open as a player has it, Start capture of 10 000 frames, Stop
+capture, then Export to CSV. Nothing is asked of KSP between the start and the stop of the measure: the script
 sleeps through it, for the game time left converted at the pace the game kept before the start.
 
 It writes run.json (the mission time at both ends, the frames captured, the pace) and, with KSPProfiler,

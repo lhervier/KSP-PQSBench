@@ -1,8 +1,8 @@
 # What the stock terrain costs: the runs
 
 The logs of the reference runs of stock KSP, with no mod touching the terrain at all. The figures
-themselves, and what they say, are in [What stock costs](../README.md#what-stock-costs); the procedure
-that produced them is on [the same page](../README.md#measuring-a-terrain-mod).
+themselves, and what they say, are in [What stock costs](../docs/what-stock-costs.md); the procedure
+that produced them is in [Measuring a terrain mod](../docs/measuring-a-terrain-mod.md).
 
 ## The runs
 
