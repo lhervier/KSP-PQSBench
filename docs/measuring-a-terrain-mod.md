@@ -37,7 +37,8 @@ Set once, before the first run, and left alone until the last one:
 **The save the reference runs were flown from is provided**:
 [`perfs/ref-mune-5km.sfs`](../perfs/ref-mune-5km.sfs), a sandbox game saved in KSP 1.12.5, holding one Mk1
 command pod in a circular equatorial orbit 5 km over the Mun. To use it, copy it into the folder of a sandbox
-game in `saves`, and load it from that game (Alt+F9). Its craft is called `Vaisseau sans nom`, which is what the `BENCH run` lines will say.
+game in `saves`, and load it from that game (Alt+F9). Its craft is called `Vaisseau sans nom`, which is
+what the `BENCH run` lines will say.
 
 Flying from that save covers the same ground as the runs in [`perfs/`](../perfs/). The steps that made it
 follow, for another altitude or another body.
@@ -126,12 +127,19 @@ It plays the steps of [The runs](#the-runs), in the same order:
 4. At 1 min 40 s, **Dump to KSP.log**. Nothing is asked of the game between the two: the script sleeps
    through, for the game time left converted at the pace the game kept before the *Reset*.
 
+On Windows, after step 2, it also does what a player does with the game's window: it brings KSP's window
+in front of every other window, with the keyboard, and moves the mouse pointer off it — full screen, to
+the middle of the screen's left edge, away from the craft. It stops if the window could not be brought
+in front, and checks again, at the start and at the stop of the measure, that it still is. Do not use the
+computer during a run.
+
 It then writes `run.json` into `--out` — the mission time at both ends, the game and real seconds between
-them, the pace — and quits KSP, unless `--keep-running` is given. The figures are in `KSP.log`, as in a
-run played by hand: copy it before the next run. The mission time is counted from the launch time of the
-save's active craft, read from a copy of the save (`--sfs`, by default the one in `perfs/`). Other
-options change the save (`--save`), the two marks (`--start` and `--stop`, in seconds of mission time),
-the camera heading (`--heading`) and the port of KSP-MCPServer (`--port`).
+them, the pace, whether KSP's window was in front at both ends — and quits KSP, unless `--keep-running`
+is given. The figures are in `KSP.log`, as in a run played by hand: copy it before the next run. The
+mission time is counted from the launch time of the save's active craft, read from a copy of the save
+(`--sfs`, by default the one in `perfs/`). Other options change the save (`--save`), the two marks
+(`--start` and `--stop`, in seconds of mission time), the camera heading (`--heading`) and the port of
+KSP-MCPServer (`--port`).
 
 **Turn the on-screen messages of KSP-MCPServer off for a run**: `screen_messages = false` in its
 `GameData/KSPMCPServer/PluginData/settings.cfg`, read when KSP starts. Left on, as it is by default, each
@@ -142,4 +150,5 @@ With [KSPProfiler](https://github.com/KSPModdingLibs/KSPProfiler) installed inst
 [a fork of it](https://github.com/lhervier/KSP-ExtMod-KSPProfiler) that only adds a remote control of its
 window's buttons, nothing in what it measures changed — the script plays the same run with *Start
 capture*, *Stop capture* and *Export to CSV*, the profiler's window open: frames are timed on the
-Performance page of each mod measured, not here.
+Performance page of each mod measured, not here. Those runs are played full screen (`FULLSCREEN = True`
+in KSP's `settings.cfg`), so that no other window can come in front of the game's.
