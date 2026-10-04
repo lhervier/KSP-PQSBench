@@ -14,13 +14,19 @@ its window hidden; with KSPProfiler, its window open as a player has it, Start c
 capture, then Export to CSV. Nothing is asked of KSP between the start and the stop of the measure: the script
 sleeps through it, for the game time left converted at the pace the game kept before the start.
 
+On Windows it also does what a player does with the game's window: brings it in front of every other window
+without giving it the keyboard, and moves the mouse pointer off it. A window left behind others, or the
+profiler's window moved elsewhere, changes what a frame costs (both were measured).
+
 It writes run.json (the mission time at both ends, the frames captured, the pace) and, with KSPProfiler,
 profiler.csv into --out, then quits KSP (unless --keep-running is given). With PQS Bench, the figures are in
 KSP.log, which KSP overwrites at its next start: keep it.
 """
 import argparse
+import ctypes
 import json
 import os
+import sys
 import time
 import urllib.request
 
@@ -92,6 +98,34 @@ def launch_time(path):
     return vessels[active]
 
 
+def bring_to_front(title):
+    """Puts the window of that title in front of every other window, without giving it the keyboard, and moves
+    the mouse pointer off it. Returns whether the window was found; does nothing but on Windows."""
+    if sys.platform != "win32":
+        return False
+    user32 = ctypes.windll.user32
+    window = user32.FindWindowW(None, title)
+    if not window:
+        return False
+    # Made topmost then not: that brings it to the top of the others without activating it.
+    flags = 0x0001 | 0x0002 | 0x0010 | 0x0040  # SWP_NOSIZE, SWP_NOMOVE, SWP_NOACTIVATE, SWP_SHOWWINDOW
+    user32.SetWindowPos(window, -1, 0, 0, 0, 0, flags)  # HWND_TOPMOST
+    user32.SetWindowPos(window, -2, 0, 0, 0, 0, flags)  # HWND_NOTOPMOST
+
+    class Rect(ctypes.Structure):
+        _fields_ = [("left", ctypes.c_long), ("top", ctypes.c_long), ("right", ctypes.c_long),
+                    ("bottom", ctypes.c_long)]
+    rect = Rect()
+    user32.GetWindowRect(window, ctypes.byref(rect))
+    width, height = user32.GetSystemMetrics(0), user32.GetSystemMetrics(1)
+    # The first corner of the screen outside the window.
+    for x, y in ((width - 1, height - 1), (0, height - 1), (width - 1, 0), (0, 0)):
+        if not (rect.left <= x < rect.right and rect.top <= y < rect.bottom):
+            user32.SetCursorPos(x, y)
+            break
+    return True
+
+
 def log(*parts):
     print(time.strftime("%H:%M:%S"), *parts, flush=True)
 
@@ -110,6 +144,12 @@ def main():
     parser.add_argument("--out", default="out", help="where run.json and profiler.csv go")
     parser.add_argument("--port", type=int, default=8770, help="the port of KSP-MCPServer")
     parser.add_argument("--keep-running", action="store_true", help="leave KSP running at the end")
+    parser.add_argument("--window-title", default="Kerbal Space Program", help="the title of KSP's window")
+    parser.add_argument("--leave-behind", action="store_true",
+                        help="leave KSP's window where it is, behind others or not (a control run, not the protocol)")
+    parser.add_argument("--profiler-window", type=float, nargs=2, metavar=("X", "Y"),
+                        help="move KSPProfiler's window this far from the screen's centre, in the units of the "
+                             "game's interface (a control run, not the protocol: it opens in the middle)")
     options = parser.parse_args()
     URL = "http://127.0.0.1:%d/mcp/" % options.port
     out = os.path.abspath(options.out)
@@ -130,6 +170,11 @@ def main():
         call("pqsbench_show_window", visible=False)
     else:
         call("profiler_open")
+        if options.profiler_window:
+            log("profiler window:", call("profiler_move_window", x=options.profiler_window[0],
+                                         y=options.profiler_window[1]))
+    in_front = False if options.leave_behind else bring_to_front(options.window_title)
+    log("KSP's window brought in front:", in_front)
 
     # Up to the start, the game is read as often as needed; the pace of game time against real time it kept
     # meanwhile converts what is left of the measure into a sleep.
@@ -158,7 +203,8 @@ def main():
     result = {"instrument": measuring, "save": options.save, "launchTime": launched,
               "missionTimeStart": round(started, 3), "missionTimeStop": round(stopped, 3),
               "gameSeconds": round(stopped - started, 3), "realSeconds": round(stopped_real - started_real, 3),
-              "paceBefore": round(pace, 4), "camera": camera}
+              "paceBefore": round(pace, 4), "camera": camera, "windowInFront": in_front,
+              "profilerWindow": options.profiler_window}
     if measuring == "profiler":
         state = call("profiler_state")
         result["profiler"] = state
