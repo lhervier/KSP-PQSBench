@@ -252,11 +252,17 @@ between two runs**, KSP overwrites it at every start.
 
 1. Load the save.
 2. Turn the camera so that part of the ground is in view, the same way in every run, and leave it there.
-   Right after the load, the camera does not show the Mun at all. Turn it to look ahead along the orbit,
-   prograde, until the capsule sits between two large craters, plainly in view.
+   Right after the load, the camera does not show the Mun at all. Turn it to look ahead along the orbit:
+   in orbit the camera turns in the orbit's frame, so the Mun's edge stands upright on the screen. Stop
+   when the Mun's ground fills the left two thirds of the screen, the sky the right third, the capsule
+   in the middle against the ground:
+
+   ![The camera of a run, 6 s into the mission: ahead along the orbit, the Mun's ground on the left two thirds of the screen](imgs/20-camera-view.png)
+
    The game does not place the camera the same way at every load, and what it shows changes what a frame
    costs to draw: with a different view, the frame rate, and with it how far the terrain subdivides,
-   would follow the view.
+   would follow the view. The ground's share shrinks as the run goes on, to about half the screen at
+   1 min 40 s: the camera's frame does not turn with the craft. Leave it so.
 3. Look at the mission time in flight, and pick a round value a little ahead of it: 30 s, for instance.
 4. When it reads that value, **Reset**. The scene load is then out of the recording.
 5. A set time later, 2 min 30 s for instance, at ×1 all along, **Dump to KSP.log**.
