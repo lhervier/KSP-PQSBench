@@ -1,3 +1,4 @@
 obj/
 GameData/PQSBenchMod/*.dll
 CLAUDE.md
+__pycache__/
