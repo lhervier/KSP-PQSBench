@@ -47,9 +47,9 @@ BENCH calibration;quads=22;roundsPerQuad=8;verticesPerFormula=39600;stockNsPerVe
 
 ## Runs read against these
 
-- [Stock Quad Cache](https://github.com/lhervier/KSP-TerrainPrecisionFix-StockQuadCache/blob/main/perfs/README.md),
+- [Stock Quad Cache](https://github.com/lhervier/KSP-Fix-StockQuadCache/blob/main/perfs/README.md),
   stock's arithmetic with the two `Transform`s read once per quad.
-- [Terrain Precision Fix](https://github.com/lhervier/KSP-TerrainPrecisionFix/blob/main/diag/common/perfs/README.md),
+- [Terrain Precision Fix](https://github.com/lhervier/KSP-Fix-TerrainPrecision/blob/main/diag/common/perfs/README.md),
   which replaces the arithmetic as well.
 
 Each of them keeps its own runs; all were taken on this same save, in the same session of runs, on this

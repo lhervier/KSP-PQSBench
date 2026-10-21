@@ -1,7 +1,7 @@
 using System;
 using System.IO;
 
-namespace com.github.lhervier.ksp.pqsbench.utils
+namespace com.github.lhervier.ksp.util.pqsbench.utils
 {
     /// <summary>How much the mod writes to KSP.log, from the quietest to the most talkative.</summary>
     internal enum LogLevel

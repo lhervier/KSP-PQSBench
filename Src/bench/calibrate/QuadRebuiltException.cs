@@ -1,6 +1,6 @@
 using System;
 
-namespace com.github.lhervier.ksp.pqsbench.bench.calibrate
+namespace com.github.lhervier.ksp.util.pqsbench.bench.calibrate
 {
     /// <summary>
     /// Re-entering PQS.BuildQuad on an already built quad rebuilt it instead of turning back, so no formula

@@ -2,10 +2,10 @@ using System;
 using System.Diagnostics;
 using System.Reflection;
 using HarmonyLib;
-using com.github.lhervier.ksp.pqsbench.events;
-using com.github.lhervier.ksp.pqsbench.utils;
+using com.github.lhervier.ksp.util.pqsbench.events;
+using com.github.lhervier.ksp.util.pqsbench.utils;
 
-namespace com.github.lhervier.ksp.pqsbench.bench.calibrate
+namespace com.github.lhervier.ksp.util.pqsbench.bench.calibrate
 {
     /// <summary>
     /// What one terrain vertex costs: on a sample of quads, and in the frame that built them, whatever is

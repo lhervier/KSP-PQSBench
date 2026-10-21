@@ -1,4 +1,4 @@
-namespace com.github.lhervier.ksp.pqsbench
+namespace com.github.lhervier.ksp.util.pqsbench
 {
     /// <summary>
     /// One way of measuring the terrain. A single one runs in a game, and it hears of the terrain only

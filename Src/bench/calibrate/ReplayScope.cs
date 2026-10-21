@@ -2,7 +2,7 @@ using System;
 using HarmonyLib;
 using UnityEngine;
 
-namespace com.github.lhervier.ksp.pqsbench.bench.calibrate
+namespace com.github.lhervier.ksp.util.pqsbench.bench.calibrate
 {
     /// <summary>
     /// Delimits the replay of a quad. Begin puts PQS in the state a real build is in when it hands a vertex

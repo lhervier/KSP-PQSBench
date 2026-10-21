@@ -1,5 +1,5 @@
 obj/
-GameData/PQSBenchMod/*.dll
+GameData/KSPUtilPQSBench/*.dll
 GameData/**/*.zip
 CLAUDE.md
 __pycache__/

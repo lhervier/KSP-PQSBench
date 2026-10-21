@@ -1,7 +1,7 @@
 using System.Diagnostics;
 using HarmonyLib;
 
-namespace com.github.lhervier.ksp.pqsbench.events
+namespace com.github.lhervier.ksp.util.pqsbench.events
 {
     /// <summary>Receives one terrain quad the game has just built.</summary>
     /// <param name="sphere">The terrain sphere that built it.</param>

@@ -30,7 +30,7 @@ recording lives as long as the game: loading another save does not reset it, *Re
 
 ## What goes to `KSP.log`
 
-Every line is prefixed with `[PQSBench]`, and every result is semicolon separated, for a spreadsheet or a
+Every line is prefixed with `[KSPUtilPQSBench]`, and every result is semicolon separated, for a spreadsheet or a
 script.
 
 **When KSP starts**, one line gives the version and the two buttons. It is followed by a warning when

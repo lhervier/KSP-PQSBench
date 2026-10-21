@@ -14,9 +14,9 @@ there is nothing to switch on, and nothing to switch off but taking its folder o
 It does not time frames. What the terrain costs a whole frame is a question for a frame profiler such as
 [KSPProfiler](https://github.com/KSPModdingLibs/KSPProfiler), which times each phase of Unity's game loop.
 
-It was written to check what [Terrain Precision Fix](https://github.com/lhervier/KSP-TerrainPrecisionFix)
+It was written to check what [Terrain Precision Fix](https://github.com/lhervier/KSP-Fix-TerrainPrecision)
 costs, and it now measures other mods as well, such as
-[Stock Quad Cache](https://github.com/lhervier/KSP-TerrainPrecisionFix-StockQuadCache). It knows nothing
+[Stock Quad Cache](https://github.com/lhervier/KSP-Fix-StockQuadCache). It knows nothing
 about any of them: everything it hooks into is stock `PQS`, and it finds out what is patching the terrain
 by asking Harmony.
 
@@ -49,7 +49,7 @@ that built them: whatever is installed, stock, and the harness alone, eight roun
 A run with the mod being measured installed, against a run with its folder taken out of `GameData`, both
 flown from the same save on rails: a command pod 5 km over the Mun, provided in [`perfs/`](perfs/). Each
 run is a fresh KSP, vertical sync off, the camera turned the same way, *Reset* and *Dump to KSP.log* at the
-same two mission times; the runs can be played by hand, or by a script through KSP-MCPServer.
+same two mission times; the runs can be played by hand, or by a script through KSP-Util-MCPServer.
 
 **→ Full chapter: [Measuring a terrain mod](docs/measuring-a-terrain-mod.md)**
 
@@ -68,13 +68,13 @@ runs a little faster or slower, its `stock` yardstick over a 5 % spread: a run i
 
 Requires KSP 1.12 and [HarmonyKSP](https://github.com/KSPModdingLibs/HarmonyKSP).
 
-Copy `GameData/PQSBenchMod` into the `GameData` of KSP. Nothing is written to your saves. **It measures
+Copy `GameData/KSPUtilPQSBench` into the `GameData` of KSP. Nothing is written to your saves. **It measures
 as soon as it is installed**, and its replay costs time in the frames that build terrain: take it out of
 `GameData` when you are not measuring.
 
 ## Settings
 
-`GameData/PQSBenchMod/PluginData/settings.cfg`, read once when KSP starts. To change it: quit KSP, edit
+`GameData/KSPUtilPQSBench/PluginData/settings.cfg`, read once when KSP starts. To change it: quit KSP, edit
 the file, start KSP again. It holds a single setting.
 
 `logLevel` takes `Error`, `Warning`, `Info` (default), `Debug` or `Trace`. **Leave it at `Info`**: the
@@ -84,7 +84,7 @@ above `Info`.
 ## Build
 
 Set `KSPDIR` to your KSP install folder, which must contain `GameData/000_Harmony`, and run `build.bat`.
-It needs the .NET SDK, and produces `GameData/PQSBenchMod/PQSBenchMod.dll`.
+It needs the .NET SDK, and produces `GameData/KSPUtilPQSBench/KSPUtilPQSBench.dll`.
 
 ## Licence
 

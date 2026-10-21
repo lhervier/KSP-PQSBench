@@ -1,8 +1,8 @@
 """Flies one run of the performance protocol, with PQS Bench or with KSPProfiler installed.
 
-It drives KSP through KSP-MCPServer, a mod that answers HTTP requests on 127.0.0.1, and needs nothing but
-Python 3: no AI, no package to install. Start a fresh KSP with KSP-MCPServer and one instrument installed
-(PQS Bench, or the fork of KSPProfiler that KSP-MCPServer can drive, never both), copy ref-mune-5km.sfs into
+It drives KSP through KSP-Util-MCPServer, a mod that answers HTTP requests on 127.0.0.1, and needs nothing but
+Python 3: no AI, no package to install. Start a fresh KSP with KSP-Util-MCPServer and one instrument installed
+(PQS Bench, or the fork of KSPProfiler that KSP-Util-MCPServer can drive, never both), copy ref-mune-5km.sfs into
 a sandbox game, wait for the main menu, then run:
 
     python run-perfs.py --folder <your sandbox game> --out out
@@ -39,7 +39,7 @@ PROFILER_FRAMES = 10000
 
 
 def call(tool, **args):
-    """Calls one tool of KSP-MCPServer and returns its answer, decoded from JSON when it is JSON."""
+    """Calls one tool of KSP-Util-MCPServer and returns its answer, decoded from JSON when it is JSON."""
     body = json.dumps({"jsonrpc": "2.0", "id": 1, "method": "tools/call",
                        "params": {"name": tool, "arguments": args}}).encode()
     request = urllib.request.Request(URL, body, {"Content-Type": "application/json"})
@@ -159,7 +159,7 @@ def main():
                         help="camera heading, degrees: in orbit, the camera's frame is the orbit's, and 204 looks "
                              "ahead with the ground on the left two thirds of the screen")
     parser.add_argument("--out", default="out", help="where run.json and profiler.csv go")
-    parser.add_argument("--port", type=int, default=8770, help="the port of KSP-MCPServer")
+    parser.add_argument("--port", type=int, default=8770, help="the port of KSP-Util-MCPServer")
     parser.add_argument("--keep-running", action="store_true", help="leave KSP running at the end")
     parser.add_argument("--window-title", default="Kerbal Space Program", help="the title of KSP's window")
     parser.add_argument("--leave-behind", action="store_true",
@@ -175,7 +175,7 @@ def main():
     measuring = instrument()
     log("instrument:", measuring, "- launch time", launched)
 
-    # KSP-MCPServer loads a save from the space centre or in flight only, as a player does: from the main
+    # KSP-Util-MCPServer loads a save from the space centre or in flight only, as a player does: from the main
     # menu, the game is opened at the space centre first.
     if call("get_state")["scene"] == "MAINMENU":
         call("open_game", folder=options.folder)

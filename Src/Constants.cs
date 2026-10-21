@@ -1,13 +1,13 @@
 using UnityEngine;
 
-namespace com.github.lhervier.ksp.pqsbench
+namespace com.github.lhervier.ksp.util.pqsbench
 {
     /// <summary>Every constant of the host: the mod, its settings, its log and its window.</summary>
     internal static class Constants
     {
         // ---- The mod ----
 
-        internal const string HarmonyId = "com.github.lhervier.ksp.pqsbench";
+        internal const string HarmonyId = "com.github.lhervier.ksp.util.pqsbench";
 
         // ---- Settings ----
 
@@ -18,7 +18,7 @@ namespace com.github.lhervier.ksp.pqsbench
 
         // ---- Log ----
 
-        internal const string LogPrefix = "[PQSBench] ";
+        internal const string LogPrefix = "[KSPUtilPQSBench] ";
 
         // ---- The window ----
 

@@ -1,10 +1,10 @@
-namespace com.github.lhervier.ksp.pqsbench.bench.calibrate
+namespace com.github.lhervier.ksp.util.pqsbench.bench.calibrate
 {
     /// <summary>Every constant of the calibrate bench.</summary>
     internal static class CalibrateConstants
     {
         // The Harmony instance that reverse patches the stock placement. It patches nothing the game runs.
-        internal const string HarmonyId = "com.github.lhervier.ksp.pqsbench.calibrate";
+        internal const string HarmonyId = "com.github.lhervier.ksp.util.pqsbench.calibrate";
 
         // How many times each formula is replayed over a quad, and how often a quad is used for it. One
         // pass over a couple of hundred vertices already lasts far longer than the timer's resolution; the

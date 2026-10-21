@@ -103,13 +103,13 @@ installed.
 ## The runs, played by a script
 
 The same runs can be played by [`perfs/automation/run-perfs.py`](../perfs/automation/run-perfs.py), which
-drives KSP through [KSP-MCPServer](https://github.com/lhervier/KSP-MCPServer), a mod that answers HTTP
+drives KSP through [KSP-Util-MCPServer](https://github.com/lhervier/KSP-Util-MCPServer), a mod that answers HTTP
 requests on 127.0.0.1 and offers tools to drive the game. When it is installed, the two buttons of PQS
 Bench and the showing or hiding of its window are among those tools (see
 [`Src/McpTools.cs`](../Src/McpTools.cs)); PQS Bench runs the same without it. The script needs Python 3
 and nothing else: no package to install, and no AI.
 
-Each run is still a fresh KSP, here with KSP-MCPServer and PQS Bench installed (the script stops if it
+Each run is still a fresh KSP, here with KSP-Util-MCPServer and PQS Bench installed (the script stops if it
 also finds KSPProfiler, below), the provided save copied into a sandbox game as above. With KSP at its main
 menu, run:
 
@@ -139,10 +139,10 @@ is given. The figures are in `KSP.log`, as in a run played by hand: copy it befo
 mission time is counted from the launch time of the save's active craft, read from a copy of the save
 (`--sfs`, by default the one in `perfs/`). Other options change the save (`--save`), the two marks
 (`--start` and `--stop`, in seconds of mission time), the camera heading (`--heading`) and the port of
-KSP-MCPServer (`--port`).
+KSP-Util-MCPServer (`--port`).
 
-**Turn the on-screen messages of KSP-MCPServer off for a run**: `screen_messages = false` in its
-`GameData/KSPMCPServer/PluginData/settings.cfg`, read when KSP starts. Left on, as it is by default, each
+**Turn the on-screen messages of KSP-Util-MCPServer off for a run**: `screen_messages = false` in its
+`GameData/KSPUtilMCPServer/PluginData/settings.cfg`, read when KSP starts. Left on, as it is by default, each
 tool names itself at the top of the screen, and the message of the tool that starts the measure would be
 drawn in the frames being measured.
 

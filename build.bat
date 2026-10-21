@@ -1,6 +1,6 @@
 @echo off
-REM Compiles GameData\PQSBenchMod\PQSBenchMod.dll. Installing is up to you: copy the
-REM GameData\PQSBenchMod folder into the GameData of KSP.
+REM Compiles GameData\KSPUtilPQSBench\KSPUtilPQSBench.dll. Installing is up to you: copy the
+REM GameData\KSPUtilPQSBench folder into the GameData of KSP.
 setlocal
 cd /d "%~dp0"
 
@@ -9,5 +9,5 @@ if not defined KSPDIR (
     exit /b 1
 )
 
-dotnet build PQSBenchMod.csproj -c Release -p:KSPDIR="%KSPDIR%"
+dotnet build KSPUtilPQSBench.csproj -c Release -p:KSPDIR="%KSPDIR%"
 exit /b %errorlevel%

@@ -1,4 +1,4 @@
-namespace com.github.lhervier.ksp.pqsbench.bench.calibrate
+namespace com.github.lhervier.ksp.util.pqsbench.bench.calibrate
 {
     /// <summary>
     /// What every formula is replayed on: each vertex of a quad, as the direction from the centre of the

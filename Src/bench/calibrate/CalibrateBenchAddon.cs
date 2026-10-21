@@ -1,9 +1,9 @@
 using UnityEngine;
 
-namespace com.github.lhervier.ksp.pqsbench.bench.calibrate
+namespace com.github.lhervier.ksp.util.pqsbench.bench.calibrate
 {
     /// <summary>
-    /// Registers the calibrate bench with PQSBenchMod when KSP starts. Does nothing else, and is gone once
+    /// Registers the calibrate bench with KSPUtilPQSBench when KSP starts. Does nothing else, and is gone once
     /// it has.
     /// </summary>
     [KSPAddon(KSPAddon.Startup.Instantly, true)]
@@ -11,7 +11,7 @@ namespace com.github.lhervier.ksp.pqsbench.bench.calibrate
     {
         private void Awake()
         {
-            PQSBenchMod.Register(new CalibrateBench());
+            KSPUtilPQSBench.Register(new CalibrateBench());
             Destroy(gameObject);
         }
     }

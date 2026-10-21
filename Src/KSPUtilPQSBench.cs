@@ -3,10 +3,10 @@ using System.Collections.Generic;
 using System.Reflection;
 using HarmonyLib;
 using UnityEngine;
-using com.github.lhervier.ksp.pqsbench.events;
-using com.github.lhervier.ksp.pqsbench.utils;
+using com.github.lhervier.ksp.util.pqsbench.events;
+using com.github.lhervier.ksp.util.pqsbench.utils;
 
-namespace com.github.lhervier.ksp.pqsbench
+namespace com.github.lhervier.ksp.util.pqsbench
 {
     /// <summary>
     /// Runs the measurement as soon as the mod is installed: installs the terrain patch, subscribes every
@@ -17,7 +17,7 @@ namespace com.github.lhervier.ksp.pqsbench
     /// What is measured lives in the benches; nothing is measured here.
     /// </summary>
     [KSPAddon(KSPAddon.Startup.Instantly, true)]
-    public class PQSBenchMod : MonoBehaviour
+    public class KSPUtilPQSBench : MonoBehaviour
     {
         // Read through KSP's own key bindings rather than UnityEngine.Input, which lives in a module this
         // mod does not reference.
@@ -82,7 +82,7 @@ namespace com.github.lhervier.ksp.pqsbench
             Log.LoadLevel();
             try
             {
-                new Harmony(Constants.HarmonyId).PatchAll(typeof(PQSBenchMod).Assembly);
+                new Harmony(Constants.HarmonyId).PatchAll(typeof(KSPUtilPQSBench).Assembly);
                 BuildQuadPatch.Built += RunInfo.QuadBuilt;
             }
             catch (Exception e)
@@ -155,7 +155,7 @@ namespace com.github.lhervier.ksp.pqsbench
         {
             // How many vertices a quad holds is not said here: PQS.cacheVertCount is still 0 this early,
             // and only gets its value when the first terrain sphere starts up. The dump reports it.
-            Log.Info($"Version {typeof(PQSBenchMod).Assembly.GetName().Version} installed, measuring."
+            Log.Info($"Version {typeof(KSPUtilPQSBench).Assembly.GetName().Version} installed, measuring."
                 + " The window's Dump writes what has been recorded, Reset throws it away; Alt+F6 shows or hides"
                 + " the window.");
             if (Log.IsDebugEnabled)

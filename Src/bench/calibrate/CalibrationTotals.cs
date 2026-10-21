@@ -1,8 +1,8 @@
 using System;
 using System.Diagnostics;
-using com.github.lhervier.ksp.pqsbench.utils;
+using com.github.lhervier.ksp.util.pqsbench.utils;
 
-namespace com.github.lhervier.ksp.pqsbench.bench.calibrate
+namespace com.github.lhervier.ksp.util.pqsbench.bench.calibrate
 {
     /// <summary>
     /// What the calibration has timed since the last Clear, over whole quads only: every formula timed on

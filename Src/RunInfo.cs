@@ -1,10 +1,10 @@
 using System;
 using System.Diagnostics;
 using System.Globalization;
-using com.github.lhervier.ksp.pqsbench.events;
-using com.github.lhervier.ksp.pqsbench.utils;
+using com.github.lhervier.ksp.util.pqsbench.events;
+using com.github.lhervier.ksp.util.pqsbench.utils;
 
-namespace com.github.lhervier.ksp.pqsbench
+namespace com.github.lhervier.ksp.util.pqsbench
 {
     /// <summary>
     /// Which run a log is: the save and the craft it was flown on, the stretch of game time it covers, how
